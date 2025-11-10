@@ -457,7 +457,7 @@ class BinanceOrderWatcher:
             logging.error(f"❌ Lỗi khi đóng vị thế {symbol}: {e}")
             pass
 
-    def create_entry_order(self, symbol, side, entry_price, quantity, order_type="LIMIT", pattern=None):
+    def create_entry_order(self, symbol, side, entry_price, quantity, order_type="MARKET", pattern=None):
         """Tạo lệnh entry (LIMIT hoặc MARKET)"""
         try:
             # Đặt leverage trước
