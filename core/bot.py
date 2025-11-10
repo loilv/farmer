@@ -241,6 +241,8 @@ class CandlePatternScannerBot:
                 # close
                 side = "BUY" if percentage_change > 0 else "SELL"
                 if self.can_order(symbol, side):
+                    if symbol in self.position:
+                        return
                     entry_price = close_price * 1.0005 if side == "BUY" else close_price * 0.9995
                     qty = self.order_manager.calculate_position_size(symbol, entry_price)
                     logging.info(f"Cùng chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price}")
@@ -255,6 +257,8 @@ class CandlePatternScannerBot:
             if percentage_h <= 0.5 or percentage_l <= 0.5:
                 side = "SELL" if percentage_change > 0 else "BUY"
                 if self.can_order(symbol, side):
+                    if symbol in self.position:
+                        return
                     if percentage_change < 0:
                         entry_price = close_price * 0.9995 if side == "BUY" else close_price * 1.0005
                     else:
@@ -274,6 +278,8 @@ class CandlePatternScannerBot:
             if percentage_h <= 0.5 or percentage_l <= 0.5:
                 side = "SELL" if percentage_change > 0 else "BUY"
                 if self.can_order(symbol, side):
+                    if symbol in self.position:
+                        return
                     if percentage_change < 0:
                         entry_price = close_price * 0.9995 if side == "BUY" else close_price * 1.0005
                     else:
