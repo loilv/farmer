@@ -237,10 +237,11 @@ class CandlePatternScannerBot:
 
             if abs(percentage_change) >= 5.5:
                 # close
-                self.binance_watcher.close_position(symbol=symbol)
-                time.sleep(2)
                 side = "BUY" if percentage_change > 0 else "SELL"
                 if self.can_order(symbol, side):
+                    self.binance_watcher.close_position(symbol=symbol)
+                    time.sleep(2)
+
                     entry_price = close_price * 1.0005 if side == "BUY" else close_price * 0.9995
                     qty = self.order_manager.calculate_position_size(symbol, entry_price)
                     logging.info(f"Cùng chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price}")
