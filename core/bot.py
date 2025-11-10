@@ -157,43 +157,43 @@ class CandlePatternScannerBot:
                 if data['R']:
                     return
 
-                # if data['o'] == 'LIMIT':
-                #     try:
-                #         side = 'SELL' if float(data['q']) > 0 else 'BUY'
-                #         p_side = 'LONG' if float(data['q']) > 0 else 'SHORT'
-                #
-                #         capital = 0.5
-                #         leverage = 20
-                #         expected_profit = 0.30
-                #
-                #         position_value = capital * leverage
-                #         target_pct = expected_profit / position_value
-                #
-                #         mark_price = float(self.binance_watcher.client.futures_mark_price(symbol=symbol)['markPrice'])
-                #         logging.info(f"📌 Current Mark Price: {mark_price}")
-                #
-                #         if side == "BUY":  # LONG -> TP phải cao hơn mark price
-                #             tp_price = min(entry_price * (1 - target_pct), mark_price * (1 - target_pct))  # +0.2%
-                #         else:  # SELL -> TP phải thấp hơn mark price
-                #             tp_price = max(entry_price * (1 + target_pct), mark_price * (1 + target_pct))  # -0.2%
-                #
-                #         tp_price = self.binance_watcher._format_price(symbol, tp_price)
-                #         quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
-                #
-                #         logging.info(f"🎯 Setting TP: {tp_price} ({target_pct * 100:.2f}%)")
-                #
-                #         self.binance_watcher.client.futures_create_order(
-                #             symbol=symbol,
-                #             side=side,
-                #             positionSide=p_side,
-                #             type="TAKE_PROFIT_MARKET",
-                #             stopPrice=tp_price,
-                #             quantity=abs(quantity),
-                #             workingType="MARK_PRICE"
-                #         )
-                #         logging.info(f"✅ TP Order placed @ {tp_price}")
-                #     except Exception as e:
-                #         logging.error(f'❌ TP ERROR: {str(e)}')
+                if data['o'] == 'LIMIT':
+                    try:
+                        side = 'SELL' if data['S'] == 'BUY' else 'BUY'
+                        p_side = data['ps']
+
+                        capital = 0.5
+                        leverage = 20
+                        expected_profit = 0.30
+
+                        position_value = capital * leverage
+                        target_pct = expected_profit / position_value
+
+                        mark_price = float(self.binance_watcher.client.futures_mark_price(symbol=symbol)['markPrice'])
+                        logging.info(f"📌 Current Mark Price: {mark_price}")
+
+                        if side == "BUY":  # LONG -> TP phải cao hơn mark price
+                            tp_price = min(entry_price * (1 - target_pct), mark_price * (1 - target_pct))  # +0.2%
+                        else:  # SELL -> TP phải thấp hơn mark price
+                            tp_price = max(entry_price * (1 + target_pct), mark_price * (1 + target_pct))  # -0.2%
+
+                        tp_price = self.binance_watcher._format_price(symbol, tp_price)
+                        quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
+
+                        logging.info(f"🎯 Setting TP: {tp_price} ({target_pct * 100:.2f}%)")
+
+                        self.binance_watcher.client.futures_create_order(
+                            symbol=symbol,
+                            side=side,
+                            positionSide=p_side,
+                            type="TAKE_PROFIT_MARKET",
+                            stopPrice=tp_price,
+                            quantity=abs(quantity),
+                            workingType="MARK_PRICE"
+                        )
+                        logging.info(f"✅ TP Order placed @ {tp_price}")
+                    except Exception as e:
+                        logging.error(f'❌ TP ERROR: {str(e)}')
 
                 self.get_position()
 
