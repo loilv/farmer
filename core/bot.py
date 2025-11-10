@@ -117,7 +117,7 @@ class CandlePatternScannerBot:
             pnl = round((mark_price - entry) * amt, 2)
             print(f"✅ {symbol} lãi {pnl} USDT")
 
-            if pnl > 0 and pnl >= 0.5:
+            if pnl > 0 and pnl >= 0.25:
                 result = "💸 WIN"
                 logging.info(f"{result} {symbol} | PNL: {pnl} USDT")
                 self.binance_watcher.close_position(
@@ -166,7 +166,7 @@ class CandlePatternScannerBot:
 
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.5
+                        expected_profit = 0.25
 
                         position_value = capital * leverage
                         target_pct = expected_profit / position_value
