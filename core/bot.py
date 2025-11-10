@@ -155,6 +155,8 @@ class CandlePatternScannerBot:
                 logging.info(f"✅ MSG data: {data})")
                 entry_price = float(data['ap'])
                 if data['R']:
+                    if data['ot'] == 'TAKE_PROFIT_MARKET':
+                        self.position.pop(symbol, None)
                     return
 
                 if data['o'] == 'LIMIT':
