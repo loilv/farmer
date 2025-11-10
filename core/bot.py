@@ -123,7 +123,6 @@ class CandlePatternScannerBot:
                 self.binance_watcher.close_position(
                     symbol=symbol
                 )
-                self.binance_watcher.client.futures_cancel_all_open_orders(symbol=symbol)
                 self.position.pop(symbol, None)
                 if symbol in self.trailing_stop:
                     self.trailing_stop.pop(symbol, None)
@@ -135,7 +134,7 @@ class CandlePatternScannerBot:
                 self.binance_watcher.close_position(
                     symbol=symbol
                 )
-                self.binance_watcher.client.futures_cancel_all_open_orders(symbol=symbol)
+
                 self.position.pop(symbol, None)
                 continue
 
@@ -286,6 +285,7 @@ class CandlePatternScannerBot:
                 self.binance_watcher.close_position(symbol=symbol)
             self.position.pop(symbol, None)
             self.trailing_stop.pop(symbol, None)
+            self.binance_watcher.client.futures_cancel_all_open_orders(symbol=symbol)
 
 
     def can_order(self, symbol, type):
