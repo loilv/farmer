@@ -1,0 +1,57 @@
+# config.yaml
+symbols: ["BTCUSDT", "TRXUSDT"]  # Để trống để quét tất cả cặp
+
+# Chỉ 1 khung giờ duy nhất
+
+timeframe: "10m"
+signal_time_frame: "5m"
+
+binance:
+#  api_key: "xY0yVLF0fv2zHuHrpIYR3BOieevpxkUWJjdRzja5TQVpCI0SAfPnWOi27jMWr8ok"
+#  secret_key: "ZqRdlU6Nl3Qk4bA9ga8yYhvIpbEeUcmWuEzMLuvg205W9ZqCiMhtfDc5FFrqsBnO"
+#  base_url: "https://testnet.binancefuture.com"
+#  testnet: True
+
+  # nhà
+#  api_key: "gHrcqBjuySTQEPeUl5VETPOfyEc1m7wMxTzSApf6wyAUOr3h4sP4swmdrzPGd8ms"
+#  secret_key: "lEvF0ZnuKpiBkEapbpvDuRQlWiNpaZIkS2WfTcmTeWXuOb9pbZzy5eVbXChPli1t"
+#  base_url: "https://fapi.binance.com"
+#  testnet: False
+
+  # cty
+#  api_key: "5jiXhTgLK5QeNxkjA1Swvojpm1p8swX151Jajet9GBIJaz1YUK9cuIdAiXeELYAe"
+#  secret_key: "vkG8Dhi1tppfxJ96XS2q0HkSeJgaJtE5VWHP1uOwqsSSqzxSldtJmQaqq9CMMFj8"
+#  base_url: "https://fapi.binance.com"
+#  testnet: False
+#
+#  que
+#  api_key: "SmUe4V9e3Y9STo65IC1QRj527gfxaa6SY2CX92CYf3S3pBzFKill7l0dweEBKHq3"
+#  secret_key: "lOsDccNCYKhkHK1WWyWji2BBYtBUshIOfxd4SWueGGaRiMgpeCd2xu7GRJGfaYFn"
+#  base_url: "https://fapi.binance.com"
+#  testnet: False
+
+#2chieu
+  api_key: "4UEa4il82hDBx2WuUC6jMTDMhFGArvIBPu8wegvEza77V4i8tiSuMb5ArWDN1mVC"
+  secret_key: "1m80tKmidIk3j3MlkHp8oA8psyiZ2KmgoRAPz2IR5gFSSzTTfRaO7vafBcHOy45Z"
+  base_url: "https://fapi.binance.com"
+  testnet: False
+
+logging:
+  level: "INFO"
+  log_file: "candle_scanner.log"
+  signals_log_file: "trading_signals.log"
+  trading_log_file: "trading_results.log"
+  max_file_size_mb: 100
+  backup_count: 5
+
+analysis:
+  update_interval: 1.0
+  max_symbols_per_connection: 200
+  scan_all_pairs: false
+
+trading:
+  # Cấu hình risk management
+  take_profit_percentage: 7  # TP 1.5%
+  stop_loss_percentage: 35  # SL 1%
+  leverage: 20  # ĐÒN BẨY 10x
+  position_size_usdt: 0.5  # SỐ TIỀN MỖI LỆNH (QUAN TRỌNG)
