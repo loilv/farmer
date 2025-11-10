@@ -237,7 +237,7 @@ class CandlePatternScannerBot:
                 # logging.info(f'Đã đủ vị thế không thể vào lệnh')
                 return
 
-            if abs(percentage_change) >= 3.5:
+            if abs(percentage_change) >= 4.5:
                 # close
                 side = "BUY" if percentage_change > 0 else "SELL"
                 if self.can_order(symbol, side):
