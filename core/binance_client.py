@@ -1,9 +1,6 @@
 import time
 from binance import ThreadedWebsocketManager, Client
 import logging
-import ccxt
-from pycoingecko import CoinGeckoAPI
-import pandas as pd
 from logging.handlers import RotatingFileHandler
 
 
