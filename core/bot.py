@@ -122,7 +122,7 @@ class CandlePatternScannerBot:
                 logging.info(f"{result} {symbol} | PNL: {pnl} USDT")
                 side = 'BUY' if amt > 0 else 'SELL'
                 self.binance_watcher.create_entry_order(symbol, side, round(mark_price, 5), amt * 2, order_type='MARKET')
-                time.sleep(2)
+                time.sleep(3)
                 self.binance_watcher.close_position(
                     symbol=symbol
                 )
@@ -169,7 +169,7 @@ class CandlePatternScannerBot:
 
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.28
+                        expected_profit = 0.35
 
                         position_value = capital * leverage
                         target_pct = expected_profit / position_value
