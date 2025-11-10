@@ -97,7 +97,7 @@ class CandlePatternScannerBot:
     def _handle_mark_price(self, msg):
 
         activate_profit = 0.5
-        stop_loss = -0.30
+        stop_loss = -0.25
 
         for coin in (d for d in msg['data'] if d['s'] in self.position):
             symbol = coin['s']
@@ -117,7 +117,7 @@ class CandlePatternScannerBot:
             pnl = round((mark_price - entry) * amt, 2)
             print(f"✅ {symbol} lãi {pnl} USDT")
 
-            if pnl > 0 and pnl >= 0.18:
+            if pnl > 0 and pnl >= 0.20:
                 result = "💸 WIN"
                 logging.info(f"{result} {symbol} | PNL: {pnl} USDT")
                 self.binance_watcher.close_position(
@@ -164,7 +164,7 @@ class CandlePatternScannerBot:
 
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.30
+                        expected_profit = 0.35
 
                         position_value = capital * leverage
                         target_pct = expected_profit / position_value
@@ -287,8 +287,6 @@ class CandlePatternScannerBot:
                 self.binance_watcher.close_position(symbol=symbol)
             self.position.pop(symbol, None)
             self.trailing_stop.pop(symbol, None)
-            self.binance_watcher.client.futures_cancel_all_open_orders(symbol=symbol)
-
 
     def can_order(self, symbol, type):
         if symbol not in self.position:

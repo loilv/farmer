@@ -448,6 +448,7 @@ class BinanceOrderWatcher:
                     )
 
                     logging.info(f"✅ Đã đóng vị thế {symbol} - Side: {side} - Quantity: {quantity}")
+                    self.client.futures_cancel_all_open_orders(symbol=symbol)
                     return order
                 else:
                     logging.info(f"⚠️ Không có vị thế mở để đóng cho {symbol}")
