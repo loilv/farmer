@@ -170,7 +170,7 @@ class CandlePatternScannerBot:
 
                             capital = 0.5
                             leverage = 20
-                            expected_profit = 0.25
+                            expected_profit = 0.30
 
                             position_value = capital * leverage
                             target_pct = expected_profit / position_value
@@ -179,9 +179,9 @@ class CandlePatternScannerBot:
                             logging.info(f"📌 Current Mark Price: {mark_price}")
 
                             if side == "BUY":  # LONG -> TP phải cao hơn mark price
-                                tp_price = max(entry_price * (1 + target_pct), mark_price * 1.002)  # +0.2%
+                                tp_price = max(entry_price * (1 + target_pct), mark_price * (1 + target_pct))  # +0.2%
                             else:  # SELL -> TP phải thấp hơn mark price
-                                tp_price = min(entry_price * (1 - target_pct), mark_price * 0.998)  # -0.2%
+                                tp_price = min(entry_price * (1 - target_pct), mark_price * (1 - target_pct))  # -0.2%
 
                             tp_price = self.binance_watcher._format_price(symbol, tp_price)
                             quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
