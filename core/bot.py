@@ -84,7 +84,7 @@ class CandlePatternScannerBot:
     def _handle_mark_price(self, msg):
 
         activate_profit = 0.5
-        stop_loss = -0.30
+        stop_loss = -0.2
 
         for coin in (d for d in msg['data'] if d['s'] in self.position):
             symbol = coin['s']
@@ -104,7 +104,7 @@ class CandlePatternScannerBot:
             pnl = round((mark_price - entry) * amt, 2)
             print(f"✅ {symbol} lãi {pnl} USDT")
 
-            if pnl > 0 and pnl >= 0.65:
+            if pnl > 0 and pnl >= 0.25:
                 result = "💸 WIN"
                 logging.info(f"{result} {symbol} | PNL: {pnl} USDT")
                 side = 'BUY' if amt > 0 else 'SELL'
@@ -154,7 +154,7 @@ class CandlePatternScannerBot:
 
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.65
+                        expected_profit = 0.25
 
                         position_value = capital * leverage
                         target_pct = expected_profit / position_value
@@ -243,9 +243,9 @@ class CandlePatternScannerBot:
             return
 
         levels = [
-            {"change": (4.5, 7), "limit": 1},
-            {"change": (8, 10), "limit": 2},
-            {"change": (12, 15), "limit": 3},
+            {"change": (4.5, 7), "limit": 0.75},
+            {"change": (8, 10), "limit": 1.5},
+            {"change": (12, 15), "limit": 2},
             {"change": (16, 23), "limit": 4},
             {"change": (24, 35), "limit": 5},
         ]
