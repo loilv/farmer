@@ -217,7 +217,7 @@ class CandlePatternScannerBot:
         # if abs(percentage_change) >= 4:
         #     logging.info(f'{symbol} | {percentage_change}% | {round(candle_duration)}s')
 
-        if 180 <= candle_duration <= 230:
+        if candle_duration <= 230:
             if len(self.position.keys()) >= 6:
                 # logging.info(f'Đã đủ vị thế không thể vào lệnh')
                 return
@@ -230,7 +230,7 @@ class CandlePatternScannerBot:
                     self.position[symbol] = {}
                     self.binance_watcher.create_entry_order(symbol, side, round(entry_price, 5), qty)
 
-        if abs(percentage_change) >= 4.5 and 40 <= candle_duration <= 130:
+        if abs(percentage_change) >= 4.5 and 30 <= candle_duration <= 130:
             if len(self.position.keys()) >= 6:
                 # logging.info(f'Đã đủ vị thế không thể vào lệnh')
                 return
