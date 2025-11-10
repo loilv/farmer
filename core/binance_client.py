@@ -476,6 +476,7 @@ class BinanceOrderWatcher:
                     symbol=symbol,
                     side=side,
                     type="MARKET",
+                    positionSide="LONG" if side == "BUY" else "SHORT",
                     quantity=quantity
                 )
             else:
