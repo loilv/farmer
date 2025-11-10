@@ -235,7 +235,7 @@ class CandlePatternScannerBot:
                 # logging.info(f'Đã đủ vị thế không thể vào lệnh')
                 return
 
-            if abs(percentage_change) >= 6.5:
+            if abs(percentage_change) >= 5.5:
                 # close
                 self.binance_watcher.close_position(symbol=symbol)
                 time.sleep(2)
