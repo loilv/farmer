@@ -232,7 +232,7 @@ class CandlePatternScannerBot:
         # if abs(percentage_change) >= 4:
         #     logging.info(f'{symbol} | {percentage_change}% | {round(candle_duration)}s')
 
-        if 150 <= candle_duration <= 280:
+        if 150 <= candle_duration <= 250:
             if len(self.position.keys()) >= 6:
                 # logging.info(f'Đã đủ vị thế không thể vào lệnh')
                 return
