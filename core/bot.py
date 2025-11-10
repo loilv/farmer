@@ -158,30 +158,54 @@ class CandlePatternScannerBot:
                 if data['R']:
                     return
 
-                # if data['o'] == 'LIMIT':
-                #     side = 'SELL' if float(data['q']) > 0 else 'BUY'
-                #     p_side = 'LONG' if float(data['q']) > 0 else 'SHORT'
-                #     target_pct = 0.085
-                #     if side == "BUY":
-                #         tp_price = entry_price * (1 + target_pct)
-                #     else:
-                #         tp_price = entry_price * (1 - target_pct)
-                #
-                #     tp_price = self.binance_watcher._format_price(symbol, tp_price)
-                #     quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
-                #     try:
-                #         self.binance_watcher.client.futures_create_order(
-                #             symbol=symbol,
-                #             side=side,
-                #             positionSide=p_side,
-                #             type="TAKE_PROFIT_MARKET",
-                #             stopPrice=tp_price,
-                #             quantity=abs(quantity),
-                #             workingType="MARK_PRICE"
-                #         )
-                #     except Exception as e:
-                #         logging.info('STOP LIMIT ERROR: ' + str(e))
-                #         pass
+                if status == 'FILLED' and execution_type == 'TRADE':
+                    logging.info(f"✅ Entry {symbol} đã khớp hoàn toàn (OrderID: {order_id})")
+                    logging.info(f"✅ MSG data: {data})")
+                    entry_price = float(data['ap'])
+                    if data['R']:
+                        return
+
+                    if data['o'] == 'LIMIT':
+                        side = 'SELL' if float(data['q']) > 0 else 'BUY'
+                        p_side = 'LONG' if float(data['q']) > 0 else 'SHORT'
+
+                        # Tính toán TP dựa trên lợi nhuận kỳ vọng
+                        capital = 0.5  # Vốn 0.5 USDT
+                        leverage = 20  # Đòn bẩy 20x
+                        expected_profit = 0.25  # Lợi nhuận kỳ vọng 0.25 USDT
+
+                        # Tính position value
+                        position_value = capital * leverage  # 0.5 * 20 = 10 USDT
+
+                        # Tính % TP cần thiết để đạt 0.25 USDT lợi nhuận
+                        target_pct = expected_profit / position_value  # 0.25 / 10 = 0.025 (2.5%)
+
+                        logging.info(
+                            f"💰 TP Calculation: Capital={capital}U, Leverage={leverage}x, PositionValue={position_value}U, TargetProfit={expected_profit}U, TP%={target_pct:.3f}")
+
+                        if side == "BUY":
+                            tp_price = entry_price * (1 + target_pct)
+                        else:
+                            tp_price = entry_price * (1 - target_pct)
+
+                        tp_price = self.binance_watcher._format_price(symbol, tp_price)
+                        quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
+
+                        logging.info(f"🎯 Setting TP: {tp_price} ({target_pct * 100:.2f}%) for {p_side} position")
+
+                        try:
+                            self.binance_watcher.client.futures_create_order(
+                                symbol=symbol,
+                                side=side,
+                                positionSide=p_side,
+                                type="TAKE_PROFIT_MARKET",
+                                stopPrice=tp_price,
+                                quantity=abs(quantity),
+                                workingType="MARK_PRICE"
+                            )
+                            logging.info(f"✅ TP Order placed at {tp_price}")
+                        except Exception as e:
+                            logging.error(f'❌ STOP LIMIT ERROR: {str(e)}')
                 self.get_position()
 
     def _handle_multi_signal_kline(self, data):
