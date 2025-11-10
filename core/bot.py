@@ -173,9 +173,9 @@ class CandlePatternScannerBot:
                         logging.info(f"📌 Current Mark Price: {mark_price}")
 
                         if side == "BUY":  # LONG -> TP phải cao hơn mark price
-                            tp_price = max(entry_price * (1 - target_pct), mark_price * (1 - target_pct))  # +0.2%
+                            tp_price = min(entry_price * (1 - target_pct), mark_price * (1 - target_pct))  # +0.2%
                         else:  # SELL -> TP phải thấp hơn mark price
-                            tp_price = min(entry_price * (1 + target_pct), mark_price * (1 + target_pct))  # -0.2%
+                            tp_price = max(entry_price * (1 + target_pct), mark_price * (1 + target_pct))  # -0.2%
 
                         tp_price = self.binance_watcher._format_price(symbol, tp_price)
                         quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
@@ -230,7 +230,7 @@ class CandlePatternScannerBot:
         # if abs(percentage_change) >= 4:
         #     logging.info(f'{symbol} | {percentage_change}% | {round(candle_duration)}s')
 
-        if candle_duration <= 230:
+        if 130 <= candle_duration <= 230:
             if len(self.position.keys()) >= 6:
                 # logging.info(f'Đã đủ vị thế không thể vào lệnh')
                 return
