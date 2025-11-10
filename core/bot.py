@@ -5,10 +5,7 @@ import logging
 from utils.logger import setup_logging
 from .binance_client import BinanceOrderWatcher
 from .order_manager import OrderBinanceManager
-from .candle_analyzer import CandleAnalyzer
-from binance.enums import HistoricalKlinesType
 import queue
-import asyncio
 
 
 class CandlePatternScannerBot:
@@ -21,7 +18,6 @@ class CandlePatternScannerBot:
         self.binance_watcher = BinanceOrderWatcher(config)
         self.symbol_scanner = {}
         self.order_manager = OrderBinanceManager(config)
-        self.analyzer = CandleAnalyzer()
         self.position = {}
         self.get_position()
         self.last_time = time.time()
