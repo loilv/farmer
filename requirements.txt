@@ -5,7 +5,3 @@ python-binance
 python-binance
 websockets
 aiohttp
-numpy
-pandas
-pycoingecko
-ccxt
