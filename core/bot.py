@@ -229,8 +229,8 @@ class CandlePatternScannerBot:
         now = time.time()
         candle_duration = now - t_open
 
-        # if abs(percentage_change) >= 4:
-        #     logging.info(f'{symbol} | {percentage_change}% | {round(candle_duration)}s')
+        if abs(percentage_change) >= 4.5:
+            logging.info(f'{symbol} | {percentage_change}% | {round(candle_duration)}s')
 
         if 15 <= candle_duration <= 120:
             if len(self.position.keys()) >= 6:
