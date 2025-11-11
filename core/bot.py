@@ -110,7 +110,7 @@ class CandlePatternScannerBot:
                 self.binance_watcher.close_position(
                     symbol=symbol
                 )
-                self.position.pop(symbol, None)
+                self.position[symbol] = {}
                 if symbol in self.trailing_stop:
                     self.trailing_stop.pop(symbol, None)
                 continue
@@ -122,7 +122,9 @@ class CandlePatternScannerBot:
                     symbol=symbol
                 )
 
-                self.position.pop(symbol, None)
+                self.position[symbol] = {}
+
+                # self.position.pop(symbol, None)
                 continue
 
     def _handle_user_stream(self, msg):
