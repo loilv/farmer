@@ -250,9 +250,9 @@ class CandlePatternScannerBot:
 
         levels = [
             {"change": (4, 9), "limit": 0.5},
-            {"change": (13, 15), "limit": 2.5},
-            {"change": (16, 23), "limit": 3},
-            {"change": (24, 60), "limit": 5},
+            {"change": (13, 15), "limit": 1.5},
+            {"change": (16, 23), "limit": 2},
+            {"change": (24, 60), "limit": 3},
         ]
 
         abs_change = abs(percentage_change)
