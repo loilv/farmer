@@ -248,9 +248,9 @@ class CandlePatternScannerBot:
 
         levels = [
             {"change": (4, 9), "limit": 0.5},
-            {"change": (13, 15), "limit": 3.5},
-            {"change": (16, 23), "limit": 5},
-            {"change": (24, 60), "limit": 7},
+            {"change": (13, 15), "limit": 2.5},
+            {"change": (16, 23), "limit": 3},
+            {"change": (24, 60), "limit": 5},
         ]
 
         abs_change = abs(percentage_change)
@@ -283,7 +283,7 @@ class CandlePatternScannerBot:
                         symbol, side, round(entry_price, 5), qty
                     )
                     return
-            elif 9 <= abs_change <= 60:
+            elif 4 <= abs_change <= 60:
                 if abs(percentage_h) < 0.5 or abs(percentage_l) < 0.5:
                     side = "BUY" if percentage_change > 0 else "SELL"
                     if not self.can_order(symbol, side):
