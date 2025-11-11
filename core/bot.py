@@ -265,7 +265,7 @@ class CandlePatternScannerBot:
             limit = lvl["limit"]
 
             if min_c <= abs_change <= max_c:
-                if abs(percentage_h) <= 0.5 or abs(percentage_l) <= 0.5:
+                if abs(percentage_h) < 0.5 or abs(percentage_l) < 0.5:
                     side = "BUY" if percentage_change > 0 else "SELL"
                     if not self.can_order(symbol, side):
                         return
