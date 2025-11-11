@@ -103,7 +103,7 @@ class CandlePatternScannerBot:
             pnl = round((mark_price - entry) * amt, 2)
             print(f"✅ {symbol} lãi {pnl} USDT")
 
-            if pnl > 0 and pnl >= 0.15:
+            if pnl > 0 and pnl >= 0.20:
                 result = "💸 WIN"
                 logging.info(f"{result} {symbol} | PNL: {pnl} USDT")
                 side = 'BUY' if amt > 0 else 'SELL'
@@ -153,7 +153,7 @@ class CandlePatternScannerBot:
 
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.15
+                        expected_profit = 0.20
 
                         position_value = capital * leverage
                         target_pct = expected_profit / position_value
@@ -247,7 +247,7 @@ class CandlePatternScannerBot:
             return
 
         levels = [
-            {"change": (5, 9), "limit": 0.5},
+            {"change": (6, 9), "limit": 0.5},
             {"change": (9, 12), "limit": 2.5},
             {"change": (13, 15), "limit": 3.5},
             {"change": (16, 23), "limit": 5},
@@ -270,7 +270,7 @@ class CandlePatternScannerBot:
                     if not self.can_order(symbol, side):
                         return
 
-                    adjust = 1.005 if side == "BUY" else 0.995
+                    adjust = 1.0005 if side == "BUY" else 0.9995
                     entry_price = close_price * adjust
 
                     qty = self.order_manager.calculate_position_size(symbol, entry_price)
@@ -290,7 +290,7 @@ class CandlePatternScannerBot:
                     if not self.can_order(symbol, side):
                         return
 
-                    adjust = 0.995 if side == "BUY" else 1.005
+                    adjust = 0.9995 if side == "BUY" else 1.0005
                     entry_price = close_price * adjust
 
                     qty = self.order_manager.calculate_position_size(symbol, entry_price)
