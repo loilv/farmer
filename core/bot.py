@@ -261,7 +261,7 @@ class CandlePatternScannerBot:
         if symbol in self.position:
             return
 
-        if candle_duration >= 270:
+        if candle_duration >= 240:
             return
 
         if 4 <= abs_change <= 60 and candle_duration < 100:
