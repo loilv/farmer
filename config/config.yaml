@@ -4,7 +4,7 @@ symbols: ["BTCUSDT", "TRXUSDT"]  # Để trống để quét tất cả cặp
 # Chỉ 1 khung giờ duy nhất
 
 timeframe: "10m"
-signal_time_frame: "5m"
+signal_time_frame: "1m"
 
 binance:
 #  api_key: "xY0yVLF0fv2zHuHrpIYR3BOieevpxkUWJjdRzja5TQVpCI0SAfPnWOi27jMWr8ok"
