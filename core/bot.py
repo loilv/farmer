@@ -103,7 +103,7 @@ class CandlePatternScannerBot:
             pnl = round((mark_price - entry) * amt, 2)
             print(f"✅ {symbol} lãi {pnl} USDT")
 
-            if pnl > 0 and pnl >= 0.20:
+            if pnl > 0 and pnl >= 0.25:
                 result = "💸 WIN"
                 logging.info(f"{result} {symbol} | PNL: {pnl} USDT")
                 side = 'BUY' if amt > 0 else 'SELL'
@@ -259,6 +259,26 @@ class CandlePatternScannerBot:
         if symbol in self.position:
             return
 
+        if 4 <= abs_change <= 60 and candle_duration < 100:
+            if abs(percentage_h) < 0.5 or abs(percentage_l) < 0.5:
+                side = "BUY" if percentage_change > 0 else "SELL"
+                if not self.can_order(symbol, side):
+                    return
+
+                adjust = 1.0005 if side == "BUY" else 0.9995
+                entry_price = close_price * adjust
+                qty = self.order_manager.calculate_position_size(symbol, entry_price)
+
+                logging.info(f"[ENTRY] Cùng chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
+
+                self.position[symbol] = {}
+                self.trailing_stop[symbol] = {"counter": True}
+
+                self.binance_watcher.create_entry_order(
+                    symbol, side, round(entry_price, 5), qty
+                )
+                return
+
         for lvl in levels:
             min_c, max_c = lvl["change"]
             limit = lvl["limit"]
@@ -283,25 +303,7 @@ class CandlePatternScannerBot:
                         symbol, side, round(entry_price, 5), qty
                     )
                     return
-            elif 4 <= abs_change <= 60:
-                if abs(percentage_h) < 0.5 or abs(percentage_l) < 0.5:
-                    side = "BUY" if percentage_change > 0 else "SELL"
-                    if not self.can_order(symbol, side):
-                        return
 
-                    adjust = 1.0005 if side == "BUY" else 0.9995
-                    entry_price = close_price * adjust
-                    qty = self.order_manager.calculate_position_size(symbol, entry_price)
-
-                    logging.info(f"[ENTRY] Cùng chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
-
-                    self.position[symbol] = {}
-                    self.trailing_stop[symbol] = {"counter": True}
-
-                    self.binance_watcher.create_entry_order(
-                        symbol, side, round(entry_price, 5), qty
-                    )
-                    return
 
     def can_order(self, symbol, type):
         if symbol not in self.position:
