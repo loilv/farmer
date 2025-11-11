@@ -154,7 +154,7 @@ class CandlePatternScannerBot:
 
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.20
+                        expected_profit = 0.15
 
                         position_value = capital * leverage
                         target_pct = expected_profit / position_value
