@@ -243,7 +243,7 @@ class CandlePatternScannerBot:
             return
 
         levels = [
-            {"change": (4, 9), "limit": 1.3},
+            {"change": (4, 9), "limit": 0.5},
             # {"change": (9, 12), "limit": 2.5},
             # {"change": (13, 15), "limit": 3.5},
             # {"change": (16, 23), "limit": 5},
