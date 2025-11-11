@@ -283,9 +283,9 @@ class CandlePatternScannerBot:
                         symbol, side, round(entry_price, 5), qty
                     )
                     return
-            elif 6 <= abs_change <= 8:
+            elif 9 <= abs_change <= 60:
                 if abs(percentage_h) < 0.5 or abs(percentage_l) < 0.5:
-                    side = "SELL" if percentage_change > 0 else "BUY"
+                    side = "BUY" if percentage_change > 0 else "SELL"
                     if not self.can_order(symbol, side):
                         return
 
