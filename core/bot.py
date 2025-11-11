@@ -261,6 +261,9 @@ class CandlePatternScannerBot:
         if symbol in self.position:
             return
 
+        if candle_duration >= 270:
+            return
+
         if 4 <= abs_change <= 60 and candle_duration < 100:
             side = "BUY" if percentage_change > 0 else "SELL"
             if not self.can_order(symbol, side):
