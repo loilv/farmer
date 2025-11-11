@@ -247,8 +247,7 @@ class CandlePatternScannerBot:
             return
 
         levels = [
-            {"change": (6, 9), "limit": 0.5},
-            {"change": (9, 12), "limit": 2.5},
+            {"change": (4, 9), "limit": 0.5},
             {"change": (13, 15), "limit": 3.5},
             {"change": (16, 23), "limit": 5},
             {"change": (24, 60), "limit": 7},
@@ -265,26 +264,6 @@ class CandlePatternScannerBot:
             limit = lvl["limit"]
 
             if min_c <= abs_change <= max_c:
-                if abs(percentage_h) < 0.5 or abs(percentage_l) < 0.5:
-                    side = "BUY" if percentage_change > 0 else "SELL"
-                    if not self.can_order(symbol, side):
-                        return
-
-                    adjust = 1.0005 if side == "BUY" else 0.9995
-                    entry_price = close_price * adjust
-
-                    qty = self.order_manager.calculate_position_size(symbol, entry_price)
-
-                    logging.info(f"[ENTRY] Cùng chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
-
-                    self.position[symbol] = {}
-                    self.trailing_stop[symbol] = {"counter": True}
-
-                    self.binance_watcher.create_entry_order(
-                        symbol, side, round(entry_price, 5), qty
-                    )
-                    return
-
                 if abs(percentage_h) >= limit or abs(percentage_l) >= limit:
                     side = "SELL" if percentage_change > 0 else "BUY"
                     if not self.can_order(symbol, side):
@@ -296,6 +275,25 @@ class CandlePatternScannerBot:
                     qty = self.order_manager.calculate_position_size(symbol, entry_price)
 
                     logging.info(f"[ENTRY] Ngược chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
+
+                    self.position[symbol] = {}
+                    self.trailing_stop[symbol] = {"counter": True}
+
+                    self.binance_watcher.create_entry_order(
+                        symbol, side, round(entry_price, 5), qty
+                    )
+                    return
+            elif 6 <= abs_change <= 8:
+                if abs(percentage_h) < 0.5 or abs(percentage_l) < 0.5:
+                    side = "SELL" if percentage_change > 0 else "BUY"
+                    if not self.can_order(symbol, side):
+                        return
+
+                    adjust = 1.0005 if side == "BUY" else 0.9995
+                    entry_price = close_price * adjust
+                    qty = self.order_manager.calculate_position_size(symbol, entry_price)
+
+                    logging.info(f"[ENTRY] Cùng chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
 
                     self.position[symbol] = {}
                     self.trailing_stop[symbol] = {"counter": True}
