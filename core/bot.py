@@ -51,7 +51,6 @@ class CandlePatternScannerBot:
         """Bắt đầu bot"""
         self.running = True
 
-
         # Xử lý tín hiệu dừng
         def signal_handler(sig, frame):
             logging.info("🛑 Nhận tín hiệu dừng...")
@@ -238,12 +237,17 @@ class CandlePatternScannerBot:
                     logging.info(f"{result} {symbol} | PNL: {pnl} USDT | Side: {side}")
 
                 self.binance_watcher.close_position(symbol=symbol)
+
+            if symbol in self.position:
+                self.binance_watcher.client.futures_cancel_all_open_orders(symbol=symbol)
+
             self.position.pop(symbol, None)
             self.trailing_stop.pop(symbol, None)
+
             return
 
         levels = [
-            {"change": (4, 9), "limit": 0.5},
+            {"change": (5, 9), "limit": 1},
             # {"change": (9, 12), "limit": 2.5},
             # {"change": (13, 15), "limit": 3.5},
             # {"change": (16, 23), "limit": 5},
@@ -300,7 +304,6 @@ class CandlePatternScannerBot:
                         symbol, side, round(entry_price, 5), qty
                     )
                     return
-
 
     def can_order(self, symbol, type):
         if symbol not in self.position:
