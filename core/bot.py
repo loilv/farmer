@@ -262,7 +262,7 @@ class CandlePatternScannerBot:
         if symbol in self.position:
             return
 
-        print(f"tren: {percentage_h}; duoi {percentage_l}")
+        print(f"tren: {symbol} {percentage_h}; duoi {percentage_l}")
 
         if abs(percentage_h) >= 3.5 or abs(percentage_l) >= 3.5:
             side = "SELL" if percentage_change > 0 else "BUY"
@@ -276,12 +276,12 @@ class CandlePatternScannerBot:
 
             logging.info(f"[ENTRY] Ngược chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
 
-            self.position[symbol] = {}
-            self.trailing_stop[symbol] = {"counter": True}
-
-            self.binance_watcher.create_entry_order(
-                symbol, side, round(entry_price, 5), qty
-            )
+            # self.position[symbol] = {}
+            # self.trailing_stop[symbol] = {"counter": True}
+            #
+            # self.binance_watcher.create_entry_order(
+            #     symbol, side, round(entry_price, 5), qty
+            # )
             return
 
 
