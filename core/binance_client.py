@@ -1,4 +1,6 @@
 import time
+from datetime import datetime
+
 from binance import ThreadedWebsocketManager, Client
 import logging
 from logging.handlers import RotatingFileHandler
