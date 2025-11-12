@@ -153,26 +153,34 @@ class CandlePatternScannerBot:
                         side = 'SELL' if data['S'] == 'BUY' else 'BUY'
                         p_side = data['ps']
 
+                        # Cấu hình
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.15
+                        expected_profit = 0.17  # lợi nhuận kỳ vọng USD
+                        max_loss = 0.13  # mức lỗ tối đa USD
 
                         position_value = capital * leverage
                         target_pct = expected_profit / position_value
+                        stop_pct = max_loss / position_value
 
                         mark_price = float(self.binance_watcher.client.futures_mark_price(symbol=symbol)['markPrice'])
                         logging.info(f"📌 Current Mark Price: {mark_price}")
 
-                        if side == "BUY":  # LONG -> TP phải cao hơn mark price
-                            tp_price = min(entry_price * (1 - target_pct), mark_price * (1 - target_pct))  # +0.2%
-                        else:  # SELL -> TP phải thấp hơn mark price
-                            tp_price = max(entry_price * (1 + target_pct), mark_price * (1 + target_pct))  # -0.2%
+                        if side == "BUY":  # LONG -> TP > entry, SL < entry
+                            tp_price = max(entry_price * (1 + target_pct), mark_price * (1 + target_pct))
+                            sl_price = min(entry_price * (1 - stop_pct), mark_price * (1 - stop_pct))
+                        else:  # SELL -> TP < entry, SL > entry
+                            tp_price = min(entry_price * (1 - target_pct), mark_price * (1 - target_pct))
+                            sl_price = max(entry_price * (1 + stop_pct), mark_price * (1 + stop_pct))
 
                         tp_price = self.binance_watcher._format_price(symbol, tp_price)
+                        sl_price = self.binance_watcher._format_price(symbol, sl_price)
                         quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
 
-                        logging.info(f"🎯 Setting TP: {tp_price} ({target_pct * 100:.2f}%)")
+                        logging.info(
+                            f"🎯 TP: {tp_price} (+{target_pct * 100:.2f}%) | 🛑 SL: {sl_price} (-{stop_pct * 100:.2f}%)")
 
+                        # Tạo lệnh TP
                         self.binance_watcher.client.futures_create_order(
                             symbol=symbol,
                             side=side,
@@ -182,9 +190,22 @@ class CandlePatternScannerBot:
                             quantity=abs(quantity),
                             workingType="MARK_PRICE"
                         )
-                        logging.info(f"✅ TP Order placed @ {tp_price}")
+
+                        # Tạo lệnh SL
+                        self.binance_watcher.client.futures_create_order(
+                            symbol=symbol,
+                            side=side,
+                            positionSide=p_side,
+                            type="STOP_MARKET",
+                            stopPrice=sl_price,
+                            quantity=abs(quantity),
+                            workingType="MARK_PRICE"
+                        )
+
+                        logging.info(f"✅ TP & SL Orders placed @ TP={tp_price}, SL={sl_price}")
+
                     except Exception as e:
-                        logging.error(f'❌ TP ERROR: {str(e)}')
+                        logging.error(f'❌ TP/SL ERROR: {str(e)}')
 
                 self.get_position()
 
