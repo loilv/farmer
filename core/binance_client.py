@@ -210,7 +210,7 @@ class BinanceOrderWatcher:
             logging.error(f"Lỗi khi lấy high volume symbols: {e}")
             return []
 
-    def get_most_volatile_symbols(self, top_n=100, min_volume_usdt=1_000_000, min_days_listed=90):
+    def get_most_volatile_symbols(self, top_n=100, min_volume_usdt=10_000_000, min_days_listed=90):
         """
         Chỉ lấy các symbol đang có trên FUTURES USDT-M PERPETUAL,
         đã lên sàn ít nhất 3 tháng, volume đủ lớn, biến động mạnh.

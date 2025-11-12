@@ -42,7 +42,7 @@ class CandlePatternScannerBot:
         return [s for s in symbols if re.match(r'^[A-Za-z0-9_]+$', s)]
 
     def get_signal_symbol_stream(self):
-        data = self.binance_watcher.get_top_strong_movers()
+        data = self.binance_watcher.get_most_volatile_symbols()
         symbols = self.remove_non_ascii_symbols(data)
         logging.info(f"Symbols: {symbols}")
         return [f'{s.lower()}@kline_{self.config.signal_time_frame}' for s in symbols]
