@@ -168,6 +168,7 @@ class CandlePatternScannerBot:
                         else:  # SELL -> TP phải thấp hơn mark price
                             tp_price = max(entry_price * (1 + target_pct), mark_price * (1 + target_pct))  # -0.2%
 
+                        price = self.binance_watcher._format_price(symbol, tp_price * 0.998 if side == "SELL" else tp_price * 1.002)
                         tp_price = self.binance_watcher._format_price(symbol, tp_price)
                         quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
 
@@ -178,7 +179,7 @@ class CandlePatternScannerBot:
                             side=side,
                             positionSide=p_side,
                             type="TAKE_PROFIT",
-                            price=tp_price * 0.998 if side == "SELL" else tp_price * 1.002,
+                            price=price,
                             stopPrice=tp_price,
                             quantity=abs(quantity),
                             workingType="MARK_PRICE"
