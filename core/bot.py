@@ -264,8 +264,8 @@ class CandlePatternScannerBot:
 
         if candle_duration > 285:
             return
-
-        print(
+        if abs(percentage_change) > 3:
+            print(
             f'Check tín hiệu {symbol} | open: {open_price} | close: {close_price} | h: {h_price} | l: {l_price} | body: {percentage_change}% | ratio_sell: {precent_sell}% | ratio_buy: {precent_buy}%')
         if 3 < abs(percentage_change) <= 5:
             if 99 < abs(precent_sell) <= 100 or 99 < abs(precent_buy) <= 100:
