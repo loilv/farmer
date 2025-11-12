@@ -103,7 +103,7 @@ class CandlePatternScannerBot:
             pnl = round((mark_price - entry) * amt, 2)
             print(f"✅ {symbol} lãi {pnl} USDT")
 
-            if pnl > 0 and pnl >= 0.15:
+            if pnl > 0 and pnl >= 0.20:
                 result = "💸 WIN"
                 logging.info(f"{result} {symbol} | PNL: {pnl} USDT")
                 side = 'BUY' if amt > 0 else 'SELL'
@@ -155,7 +155,7 @@ class CandlePatternScannerBot:
 
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.12
+                        expected_profit = 0.15
 
                         position_value = capital * leverage
                         target_pct = expected_profit / position_value
