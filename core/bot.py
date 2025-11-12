@@ -225,7 +225,7 @@ class CandlePatternScannerBot:
 
         # print(f'Check tín hiệu {symbol} | open: {open_price} | close: {close_price} | h: {h_price} | l: {l_price} | body: {percentage_change}% | ratio_sell: {precent_sell}% | ratio_buy: {precent_buy}%')
 
-        if abs(percentage_change) < 3:
+        if abs(percentage_change) < 5:
             return
 
         print(
