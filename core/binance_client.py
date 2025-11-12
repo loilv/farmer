@@ -103,22 +103,34 @@ class BinanceOrderWatcher:
     def get_top_strong_movers(self, top_n=100, pump_threshold=4.5, dump_threshold=-4.5, min_volume_usdt=10_000_000):
         """
         Lấy top coin Pump/Dump mạnh nhất trong 24h (Futures USDT-M PERPETUAL)
+        Chỉ lấy những coin đã lên sàn > 3 tháng.
 
-        Trả về 1 danh sách symbol duy nhất
-        - Ưu tiên coin biến động lớn nhất
+        Trả về danh sách symbol duy nhất
         """
         try:
+            now = datetime.utcnow()
+            min_age_days = 90  # 3 tháng ~ 90 ngày
+
             # Lấy symbol hợp lệ đang giao dịch
             exchange_info = self.client.futures_exchange_info()
-            valid_symbols = {
-                s["symbol"]
-                for s in exchange_info["symbols"]
-                if (
-                        s.get("contractType") == "PERPETUAL"
-                        and s.get("quoteAsset") == "USDT"
-                        and s.get("status") == "TRADING"
-                )
-            }
+            valid_symbols = set()
+
+            for s in exchange_info["symbols"]:
+                try:
+                    if (
+                            s.get("contractType") == "PERPETUAL"
+                            and s.get("quoteAsset") == "USDT"
+                            and s.get("status") == "TRADING"
+                    ):
+                        # Lọc theo thời gian lên sàn (nếu có)
+                        onboard_ts = s.get("onboardDate")  # millisecond
+                        if onboard_ts:
+                            onboard_date = datetime.utcfromtimestamp(onboard_ts / 1000)
+                            if (now - onboard_date).days < min_age_days:
+                                continue  # loại coin mới lên sàn
+                        valid_symbols.add(s["symbol"])
+                except Exception:
+                    continue
 
             tickers = self.client.futures_ticker()
             movers = []
@@ -157,7 +169,7 @@ class BinanceOrderWatcher:
             logging.error(f"Lỗi khi lấy top strong movers: {e}")
             return []
 
-    def get_high_volume_symbols(self, top_n=100, min_volume_usdt=50_000_000):
+    def get_high_volume_symbols(self, top_n=100, min_volume_usdt=500_000_000):
         """
         Lấy danh sách symbol có volume giao dịch lớn nhất trong 24h
         Chỉ lấy Futures USDT-M PERPETUAL đang giao dịch
