@@ -155,7 +155,7 @@ class CandlePatternScannerBot:
 
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.15
+                        expected_profit = 0.12
 
                         position_value = capital * leverage
                         target_pct = expected_profit / position_value
@@ -225,6 +225,43 @@ class CandlePatternScannerBot:
 
         # print(f'Check tín hiệu {symbol} | open: {open_price} | close: {close_price} | h: {h_price} | l: {l_price} | body: {percentage_change}% | ratio_sell: {precent_sell}% | ratio_buy: {precent_buy}%')
 
+
+
+        # t_open = kline['t'] / 1000
+        # now = time.time()
+        # candle_duration = now - t_open
+
+        # ✅ Exit: khi nến đóng
+        if kline['x'] and symbol in self.position:
+            pos = self.position.get(symbol, False)
+            amt = float(pos.get('positionAmt', 0))
+            if amt != 0:
+                side = 'BUY' if amt > 0 else 'SELL'
+                entry_price = float(pos['entryPrice'])
+
+                if side == 'BUY':
+                    pnl = round((close_price - entry_price) * amt, 2)
+                else:
+                    pnl = round((entry_price - close_price) * amt, 2)
+
+                if pnl > 0 and side == 'BUY' or pnl < 0 and side == 'SELL':
+                    result = "💸 WIN"
+                    logging.info(f"{result} {symbol} | PNL: {abs(pnl)} USDT | Side: {side}")
+                elif pnl < 0 and side == 'BUY' or pnl > 0 and side == 'SELL':
+                    result = "LOSS ❌"
+                    logging.info(f"{result} {symbol} | PNL: {pnl} USDT | Side: {side}")
+
+                self.binance_watcher.close_position(symbol=symbol)
+
+            if symbol in self.position:
+                self.binance_watcher.client.futures_cancel_all_open_orders(symbol=symbol)
+
+            self.position.pop(symbol, None)
+            self.trailing_stop.pop(symbol, None)
+
+            return
+
+
         if abs(percentage_change) < 3:
             return
 
@@ -269,40 +306,6 @@ class CandlePatternScannerBot:
             self.binance_watcher.create_entry_order(
                 symbol, side, round(entry_price, 5), qty
             )
-            return
-
-        # t_open = kline['t'] / 1000
-        # now = time.time()
-        # candle_duration = now - t_open
-
-        # ✅ Exit: khi nến đóng
-        if kline['x'] and symbol in self.position:
-            pos = self.position.get(symbol, False)
-            amt = float(pos.get('positionAmt', 0))
-            if amt != 0:
-                side = 'BUY' if amt > 0 else 'SELL'
-                entry_price = float(pos['entryPrice'])
-
-                if side == 'BUY':
-                    pnl = round((close_price - entry_price) * amt, 2)
-                else:
-                    pnl = round((entry_price - close_price) * amt, 2)
-
-                if pnl > 0 and side == 'BUY' or pnl < 0 and side == 'SELL':
-                    result = "💸 WIN"
-                    logging.info(f"{result} {symbol} | PNL: {abs(pnl)} USDT | Side: {side}")
-                elif pnl < 0 and side == 'BUY' or pnl > 0 and side == 'SELL':
-                    result = "LOSS ❌"
-                    logging.info(f"{result} {symbol} | PNL: {pnl} USDT | Side: {side}")
-
-                self.binance_watcher.close_position(symbol=symbol)
-
-            if symbol in self.position:
-                self.binance_watcher.client.futures_cancel_all_open_orders(symbol=symbol)
-
-            self.position.pop(symbol, None)
-            self.trailing_stop.pop(symbol, None)
-
             return
 
     def can_order(self, symbol, type):
