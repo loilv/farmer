@@ -222,7 +222,7 @@ class CandlePatternScannerBot:
         if percentage_change < 0:
             precent_buy = round((open_price - close_price) / (open_price - l_price) * 100) if (open_price - l_price) > 0 else 0
 
-        print(f'Check tín hiệu {symbol} | open: {open_price} | close: {close_price} | h: {h_price} | l: {l_price} | body: {percentage_change}% | ratio_sell: {precent_sell}% | ratio_buy: {precent_buy}%')
+        # print(f'Check tín hiệu {symbol} | open: {open_price} | close: {close_price} | h: {h_price} | l: {l_price} | body: {percentage_change}% | ratio_sell: {precent_sell}% | ratio_buy: {precent_buy}%')
 
         if abs(percentage_change) < 4:
             return
