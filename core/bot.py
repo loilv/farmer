@@ -211,6 +211,7 @@ class CandlePatternScannerBot:
         h_price = round(float(kline['h']), 5)
         l_price = round(float(kline['l']), 5)
         percentage_change = round(((close_price - open_price) / open_price) * 100, 2)
+        percentage_hl = round(((h_price - l_price) / l_price) * 100, 2)
         percentage_h = round(((h_price - close_price) / h_price) * 100, 2)
         percentage_l = round(((close_price - l_price) / l_price) * 100, 2)
 
@@ -265,11 +266,14 @@ class CandlePatternScannerBot:
         if candle_duration > 840:
             return
 
-        if abs(percentage_change) > 3:
+        if abs(percentage_hl) > 9:
+            return
+
+        if abs(percentage_change) >= 4:
             print(
             f'Check tín hiệu {symbol} | open: {open_price} | close: {close_price} | h: {h_price} | l: {l_price} | body: {percentage_change}% | ratio_sell: {precent_sell}% | ratio_buy: {precent_buy}%')
 
-        if abs(percentage_change) >= 3:
+        if abs(percentage_change) >= 4:
             if 80 < abs(precent_sell) <= 85 or 80 < abs(precent_buy) <= 85:
                 side = "SELL" if percentage_change > 0 else "BUY"
                 if not self.can_order(symbol, side):
