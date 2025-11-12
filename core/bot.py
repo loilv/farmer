@@ -83,7 +83,7 @@ class CandlePatternScannerBot:
     def _handle_mark_price(self, msg):
 
         activate_profit = 0.5
-        stop_loss = -0.15
+        stop_loss = -0.45
 
         for coin in (d for d in msg['data'] if d['s'] in self.position):
             symbol = coin['s']
@@ -103,7 +103,7 @@ class CandlePatternScannerBot:
             pnl = round((mark_price - entry) * amt, 2)
             print(f"✅ {symbol} lãi {pnl} USDT")
 
-            if pnl > 0 and pnl >= 0.25:
+            if pnl > 0 and pnl >= 0.65:
                 result = "💸 WIN"
                 logging.info(f"{result} {symbol} | PNL: {pnl} USDT")
                 side = 'BUY' if amt > 0 else 'SELL'
@@ -155,57 +155,37 @@ class CandlePatternScannerBot:
 
                         capital = 0.5
                         leverage = 20
-
-                        # Risk & Reward
-                        risk = 0.13  # lỗ tối đa USD
-                        risk_reward_ratio = 1.5  # R:R
+                        expected_profit = 0.65
 
                         position_value = capital * leverage
-                        risk_pct = risk / position_value
-                        reward_pct = risk_pct * risk_reward_ratio
+                        target_pct = expected_profit / position_value
 
                         mark_price = float(self.binance_watcher.client.futures_mark_price(symbol=symbol)['markPrice'])
                         logging.info(f"📌 Current Mark Price: {mark_price}")
 
-                        if side == "BUY":  # LONG
-                            tp_price = max(entry_price * (1 + reward_pct), mark_price * (1 + reward_pct))
-                            sl_price = min(entry_price * (1 - risk_pct), mark_price * (1 - risk_pct))
-                        else:  # SHORT
-                            tp_price = min(entry_price * (1 - reward_pct), mark_price * (1 - reward_pct))
-                            sl_price = max(entry_price * (1 + risk_pct), mark_price * (1 + risk_pct))
+                        if side == "BUY":  # LONG -> TP phải cao hơn mark price
+                            tp_price = min(entry_price * (1 - target_pct), mark_price * (1 - target_pct))  # +0.2%
+                        else:  # SELL -> TP phải thấp hơn mark price
+                            tp_price = max(entry_price * (1 + target_pct), mark_price * (1 + target_pct))  # -0.2%
 
                         tp_price = self.binance_watcher._format_price(symbol, tp_price)
-                        sl_price = self.binance_watcher._format_price(symbol, sl_price)
                         quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
 
-                        logging.info(f"🎯 TP: {tp_price} | 🛑 SL: {sl_price} | R:R = {risk_reward_ratio}:1")
+                        logging.info(f"🎯 Setting TP: {tp_price} ({target_pct * 100:.2f}%)")
 
-                        # Tạo lệnh TP
                         self.binance_watcher.client.futures_create_order(
                             symbol=symbol,
                             side=side,
                             positionSide=p_side,
-                            type="TAKE_PROFIT_MARKET",
+                            type="TAKE_PROFIT",
+                            price=tp_price * 0.995,
                             stopPrice=tp_price,
                             quantity=abs(quantity),
                             workingType="MARK_PRICE"
                         )
-
-                        # Tạo lệnh SL
-                        self.binance_watcher.client.futures_create_order(
-                            symbol=symbol,
-                            side=side,
-                            positionSide=p_side,
-                            type="STOP_MARKET",
-                            stopPrice=sl_price,
-                            quantity=abs(quantity),
-                            workingType="MARK_PRICE"
-                        )
-
-                        logging.info(f"✅ TP & SL Orders placed @ TP={tp_price}, SL={sl_price}")
-
+                        logging.info(f"✅ TP Order placed @ {tp_price}")
                     except Exception as e:
-                        logging.error(f'❌ TP/SL ERROR: {str(e)}')
+                        logging.error(f'❌ TP ERROR: {str(e)}')
 
                 self.get_position()
 
@@ -269,21 +249,39 @@ class CandlePatternScannerBot:
 
             return
 
-        levels = [
-            {"change": (3, 9), "limit": 0.5},
-            {"change": (13, 15), "limit": 1.5},
-            {"change": (16, 23), "limit": 2},
-            {"change": (24, 60), "limit": 3},
-        ]
+        # levels = [
+        #     {"change": (3, 9), "limit": 0.5},
+        #     {"change": (13, 15), "limit": 1.5},
+        #     {"change": (16, 23), "limit": 2},
+        #     {"change": (24, 60), "limit": 3},
+        # ]
 
-        abs_change = abs(percentage_change)
+        # abs_change = abs(percentage_change)
 
         # Nếu đã có position thì thôi
         if symbol in self.position:
             return
 
-        if candle_duration >= 55:
+        if percentage_h >= 3.5 or percentage_l >= 3.5:
+            side = "SELL" if percentage_change > 0 else "BUY"
+            if not self.can_order(symbol, side):
+                return
+
+            adjust = 0.995 if side == "BUY" else 1.005
+            entry_price = close_price * adjust
+
+            qty = self.order_manager.calculate_position_size(symbol, entry_price)
+
+            logging.info(f"[ENTRY] Ngược chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
+
+            self.position[symbol] = {}
+            self.trailing_stop[symbol] = {"counter": True}
+
+            self.binance_watcher.create_entry_order(
+                symbol, side, round(entry_price, 5), qty
+            )
             return
+
 
         # if 3 <= abs_change <= 60 and candle_duration < 20:
         #     if abs(percentage_h) < 0.5 or abs(percentage_l) < 0.5:
@@ -305,30 +303,30 @@ class CandlePatternScannerBot:
         #         )
         #         return
 
-        for lvl in levels:
-            min_c, max_c = lvl["change"]
-            limit = lvl["limit"]
-
-            if min_c <= abs_change <= max_c:
-                if abs(percentage_h) >= limit or abs(percentage_l) >= limit:
-                    side = "SELL" if percentage_change > 0 else "BUY"
-                    if not self.can_order(symbol, side):
-                        return
-
-                    adjust = 0.9995 if side == "BUY" else 1.0005
-                    entry_price = close_price * adjust
-
-                    qty = self.order_manager.calculate_position_size(symbol, entry_price)
-
-                    logging.info(f"[ENTRY] Ngược chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
-
-                    self.position[symbol] = {}
-                    self.trailing_stop[symbol] = {"counter": True}
-
-                    self.binance_watcher.create_entry_order(
-                        symbol, side, round(entry_price, 5), qty
-                    )
-                    return
+        # for lvl in levels:
+        #     min_c, max_c = lvl["change"]
+        #     limit = lvl["limit"]
+        #
+        #     if min_c <= abs_change <= max_c:
+        #         if abs(percentage_h) >= limit or abs(percentage_l) >= limit:
+        #             side = "SELL" if percentage_change > 0 else "BUY"
+        #             if not self.can_order(symbol, side):
+        #                 return
+        #
+        #             adjust = 0.9995 if side == "BUY" else 1.0005
+        #             entry_price = close_price * adjust
+        #
+        #             qty = self.order_manager.calculate_position_size(symbol, entry_price)
+        #
+        #             logging.info(f"[ENTRY] Ngược chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
+        #
+        #             self.position[symbol] = {}
+        #             self.trailing_stop[symbol] = {"counter": True}
+        #
+        #             self.binance_watcher.create_entry_order(
+        #                 symbol, side, round(entry_price, 5), qty
+        #             )
+        #             return
 
 
     def can_order(self, symbol, type):
