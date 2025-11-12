@@ -44,7 +44,6 @@ class CandlePatternScannerBot:
     def get_signal_symbol_stream(self):
         data = self.binance_watcher.get_top_strong_movers()
         symbols = self.remove_non_ascii_symbols(data)
-        symbols = ['JCTUSDT']
         logging.info(f"Symbols: {symbols}")
         return [f'{s.lower()}@kline_{self.config.signal_time_frame}' for s in symbols]
 
