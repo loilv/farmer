@@ -83,7 +83,7 @@ class CandlePatternScannerBot:
     def _handle_mark_price(self, msg):
 
         activate_profit = 0.5
-        stop_loss = -0.45
+        stop_loss = -0.30
 
         for coin in (d for d in msg['data'] if d['s'] in self.position):
             symbol = coin['s']
@@ -103,7 +103,7 @@ class CandlePatternScannerBot:
             pnl = round((mark_price - entry) * amt, 2)
             print(f"✅ {symbol} lãi {pnl} USDT")
 
-            if pnl > 0 and pnl >= 0.25:
+            if pnl > 0 and pnl >= 0.35:
                 result = "💸 WIN"
                 logging.info(f"{result} {symbol} | PNL: {pnl} USDT")
                 side = 'BUY' if amt > 0 else 'SELL'
@@ -230,7 +230,28 @@ class CandlePatternScannerBot:
 
         print(
             f'Check tín hiệu {symbol} | open: {open_price} | close: {close_price} | h: {h_price} | l: {l_price} | body: {percentage_change}% | ratio_sell: {precent_sell}% | ratio_buy: {precent_buy}%')
-        if 70 < abs(precent_sell) <= 80 or 70 < abs(precent_buy) <= 80:
+
+        if 99 < abs(precent_sell) <= 100 or 99 < abs(precent_buy) <= 100:
+            side = "BUY" if percentage_change > 0 else "SELL"
+            if not self.can_order(symbol, side):
+                return
+
+            adjust = 1.0005 if side == "BUY" else 0.9995
+            entry_price = close_price * adjust
+
+            qty = self.order_manager.calculate_position_size(symbol, entry_price)
+
+            logging.info(f"[ENTRY] Cùng chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
+
+            self.position[symbol] = {}
+            self.trailing_stop[symbol] = {"counter": True}
+
+            self.binance_watcher.create_entry_order(
+                symbol, side, round(entry_price, 5), qty
+            )
+            return
+
+        if 70 < abs(precent_sell) <= 75 or 70 < abs(precent_buy) <= 75:
             side = "SELL" if percentage_change > 0 else "BUY"
             if not self.can_order(symbol, side):
                 return
