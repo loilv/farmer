@@ -290,26 +290,26 @@ class CandlePatternScannerBot:
                 )
                 return
 
-        if abs(percentage_change) > 5:
-            if 99 < abs(precent_sell) <= 100 or 99 < abs(precent_buy) <= 100:
-                side = "BUY" if percentage_change > 0 else "SELL"
-                if not self.can_order(symbol, side):
-                    return
-
-                adjust = 1.0005 if side == "BUY" else 0.9995
-                entry_price = close_price * adjust
-
-                qty = self.order_manager.calculate_position_size(symbol, entry_price)
-
-                logging.info(f"[ENTRY] Cùng chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
-
-                self.position[symbol] = {}
-                self.trailing_stop[symbol] = {"counter": True}
-
-                self.binance_watcher.create_entry_order(
-                    symbol, side, round(entry_price, 5), qty
-                )
-                return
+        # if abs(percentage_change) > 5:
+        #     if 99 < abs(precent_sell) <= 100 or 99 < abs(precent_buy) <= 100:
+        #         side = "BUY" if percentage_change > 0 else "SELL"
+        #         if not self.can_order(symbol, side):
+        #             return
+        #
+        #         adjust = 1.0005 if side == "BUY" else 0.9995
+        #         entry_price = close_price * adjust
+        #
+        #         qty = self.order_manager.calculate_position_size(symbol, entry_price)
+        #
+        #         logging.info(f"[ENTRY] Cùng chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
+        #
+        #         self.position[symbol] = {}
+        #         self.trailing_stop[symbol] = {"counter": True}
+        #
+        #         self.binance_watcher.create_entry_order(
+        #             symbol, side, round(entry_price, 5), qty
+        #         )
+        #         return
 
 
     def can_order(self, symbol, type):
