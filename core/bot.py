@@ -263,7 +263,7 @@ class CandlePatternScannerBot:
             return
 
 
-        if abs(percentage_change) < 3:
+        if :
             return
 
         if candle_duration > 285:
@@ -272,7 +272,7 @@ class CandlePatternScannerBot:
         print(
             f'Check tín hiệu {symbol} | open: {open_price} | close: {close_price} | h: {h_price} | l: {l_price} | body: {percentage_change}% | ratio_sell: {precent_sell}% | ratio_buy: {precent_buy}%')
 
-        if 99 < abs(precent_sell) <= 100 or 99 < abs(precent_buy) <= 100:
+        if 99 < abs(precent_sell) <= 100 or 99 < abs(precent_buy) <= 100 and 3 < abs(percentage_change) <= 5:
             side = "BUY" if percentage_change > 0 else "SELL"
             if not self.can_order(symbol, side):
                 return
@@ -292,7 +292,7 @@ class CandlePatternScannerBot:
             )
             return
 
-        if 80 < abs(precent_sell) <= 85 or 80 < abs(precent_buy) <= 85:
+        if 75 < abs(precent_sell) <= 80 or 75 < abs(precent_buy) <= 80 and abs(percentage_change) >= 4.5:
             side = "SELL" if percentage_change > 0 else "BUY"
             if not self.can_order(symbol, side):
                 return
