@@ -153,32 +153,32 @@ class CandlePatternScannerBot:
                         side = 'SELL' if data['S'] == 'BUY' else 'BUY'
                         p_side = data['ps']
 
-                        # Cấu hình
                         capital = 0.5
                         leverage = 20
-                        expected_profit = 0.17  # lợi nhuận kỳ vọng USD
-                        max_loss = 0.13  # mức lỗ tối đa USD
+
+                        # Risk & Reward
+                        risk = 0.13  # lỗ tối đa USD
+                        risk_reward_ratio = 1.5  # R:R
 
                         position_value = capital * leverage
-                        target_pct = expected_profit / position_value
-                        stop_pct = max_loss / position_value
+                        risk_pct = risk / position_value
+                        reward_pct = risk_pct * risk_reward_ratio
 
                         mark_price = float(self.binance_watcher.client.futures_mark_price(symbol=symbol)['markPrice'])
                         logging.info(f"📌 Current Mark Price: {mark_price}")
 
-                        if side == "BUY":  # LONG -> TP > entry, SL < entry
-                            tp_price = max(entry_price * (1 + target_pct), mark_price * (1 + target_pct))
-                            sl_price = min(entry_price * (1 - stop_pct), mark_price * (1 - stop_pct))
-                        else:  # SELL -> TP < entry, SL > entry
-                            tp_price = min(entry_price * (1 - target_pct), mark_price * (1 - target_pct))
-                            sl_price = max(entry_price * (1 + stop_pct), mark_price * (1 + stop_pct))
+                        if side == "BUY":  # LONG
+                            tp_price = max(entry_price * (1 + reward_pct), mark_price * (1 + reward_pct))
+                            sl_price = min(entry_price * (1 - risk_pct), mark_price * (1 - risk_pct))
+                        else:  # SHORT
+                            tp_price = min(entry_price * (1 - reward_pct), mark_price * (1 - reward_pct))
+                            sl_price = max(entry_price * (1 + risk_pct), mark_price * (1 + risk_pct))
 
                         tp_price = self.binance_watcher._format_price(symbol, tp_price)
                         sl_price = self.binance_watcher._format_price(symbol, sl_price)
                         quantity = self.binance_watcher._format_quantity(symbol, abs(quantity))
 
-                        logging.info(
-                            f"🎯 TP: {tp_price} (+{target_pct * 100:.2f}%) | 🛑 SL: {sl_price} (-{stop_pct * 100:.2f}%)")
+                        logging.info(f"🎯 TP: {tp_price} | 🛑 SL: {sl_price} | R:R = {risk_reward_ratio}:1")
 
                         # Tạo lệnh TP
                         self.binance_watcher.client.futures_create_order(
