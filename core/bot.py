@@ -83,7 +83,7 @@ class CandlePatternScannerBot:
     def _handle_mark_price(self, msg):
 
         activate_profit = 0.5
-        stop_loss = -0.12
+        stop_loss = -0.15
 
         for coin in (d for d in msg['data'] if d['s'] in self.position):
             symbol = coin['s']
