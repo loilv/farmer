@@ -227,9 +227,10 @@ class CandlePatternScannerBot:
 
 
 
-        # t_open = kline['t'] / 1000
-        # now = time.time()
-        # candle_duration = now - t_open
+        t_open = kline['t'] / 1000
+        now = time.time()
+        candle_duration = now - t_open
+
 
         # ✅ Exit: khi nến đóng
         if kline['x'] and symbol in self.position:
@@ -263,6 +264,9 @@ class CandlePatternScannerBot:
 
 
         if abs(percentage_change) < 3:
+            return
+
+        if candle_duration > 270:
             return
 
         print(
