@@ -102,7 +102,7 @@ class BinanceOrderWatcher:
             print(f"❌ Lỗi: {e}")
             return []
 
-    def get_top_strong_movers(self, top_n=100, pump_threshold=4.5, dump_threshold=-4.5, min_volume_usdt=10_000_000):
+    def get_top_strong_movers(self, top_n=100, pump_threshold=2.5, dump_threshold=-2.5, min_volume_usdt=10_000_000):
         """
         Lấy top coin Pump/Dump mạnh nhất trong 24h (Futures USDT-M PERPETUAL)
         Chỉ lấy những coin đã lên sàn > 3 tháng.
