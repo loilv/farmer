@@ -122,7 +122,7 @@ class CandlePatternScannerBot:
                     symbol=symbol
                 )
 
-                self.position.pop(symbol, None)
+                self.position[symbol] = {}
 
                 # self.position.pop(symbol, None)
                 continue
