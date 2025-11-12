@@ -314,6 +314,9 @@ class CandlePatternScannerBot:
             return False
 
         curr_position = self.position.get(symbol)
+        if not curr_position:
+            return True
+
         # self.binance_watcher.client.futures_cancel_all_open_orders(symbol=symbol)
         if type == 'BUY' and float(curr_position.get('positionAmt', 0)) >= 0:
             return False
