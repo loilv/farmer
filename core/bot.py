@@ -266,7 +266,7 @@ class CandlePatternScannerBot:
         if abs(percentage_change) < 3:
             return
 
-        if candle_duration > 270:
+        if candle_duration > 285:
             return
 
         print(
