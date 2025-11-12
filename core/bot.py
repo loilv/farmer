@@ -44,6 +44,7 @@ class CandlePatternScannerBot:
     def get_signal_symbol_stream(self):
         data = self.binance_watcher.get_top_strong_movers()
         symbols = self.remove_non_ascii_symbols(data)
+        symbols = ['JCTUSDT']
         logging.info(f"Symbols: {symbols}")
         return [f'{s.lower()}@kline_{self.config.signal_time_frame}' for s in symbols]
 
@@ -262,27 +263,24 @@ class CandlePatternScannerBot:
         if symbol in self.position:
             return
 
-        print(f"tren: {symbol} {percentage_h}; duoi {percentage_l}")
-
-        if abs(percentage_h) >= 3.5 or abs(percentage_l) >= 3.5:
+        if (percentage_change > 0 and abs(percentage_h) >= 3.5) or (percentage_change < 0 and abs(percentage_l) >= 3.5):
             side = "SELL" if percentage_change > 0 else "BUY"
+
             if not self.can_order(symbol, side):
                 return
 
             adjust = 0.995 if side == "BUY" else 1.005
             entry_price = close_price * adjust
-
             qty = self.order_manager.calculate_position_size(symbol, entry_price)
 
             logging.info(f"[ENTRY] Ngược chiều: {side} {symbol} | Qty: {qty} | Price: {entry_price:.5f}")
 
-            # self.position[symbol] = {}
-            # self.trailing_stop[symbol] = {"counter": True}
-            #
-            # self.binance_watcher.create_entry_order(
-            #     symbol, side, round(entry_price, 5), qty
-            # )
-            return
+            self.position[symbol] = {}
+            self.trailing_stop[symbol] = {"counter": True}
+
+            self.binance_watcher.create_entry_order(
+                symbol, side, round(entry_price, 5), qty
+            )
 
 
         # if 3 <= abs_change <= 60 and candle_duration < 20:
