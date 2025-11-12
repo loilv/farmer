@@ -110,7 +110,7 @@ class CandlePatternScannerBot:
                 self.binance_watcher.close_position(
                     symbol=symbol
                 )
-                self.position[symbol] = {}
+                self.position.pop(symbol, None)
                 if symbol in self.trailing_stop:
                     self.trailing_stop.pop(symbol, None)
                 continue
@@ -122,7 +122,7 @@ class CandlePatternScannerBot:
                     symbol=symbol
                 )
 
-                self.position[symbol] = {}
+                self.position.pop(symbol, None)
 
                 # self.position.pop(symbol, None)
                 continue
@@ -144,7 +144,7 @@ class CandlePatternScannerBot:
                 logging.info(f"✅ MSG data: {data})")
                 entry_price = float(data['ap'])
                 if data['R']:
-                    if data['ot'] == 'TAKE_PROFIT_MARKET':
+                    if data['ot'] == 'TAKE_PROFIT':
                         self.position.pop(symbol, None)
                     return
 
@@ -260,10 +260,6 @@ class CandlePatternScannerBot:
             self.position.pop(symbol, None)
             self.trailing_stop.pop(symbol, None)
 
-            return
-
-
-        if :
             return
 
         if candle_duration > 285:
