@@ -263,9 +263,6 @@ class CandlePatternScannerBot:
 
             return
 
-        if abs(percentage_hl) > 3:
-            return
-
         if abs(percentage_change) >= 3:
             print(
             f'Check tín hiệu {symbol} | open: {open_price} | close: {close_price} | h: {h_price} | l: {l_price} | body: {percentage_change}% | ratio_sell: {precent_sell}% | ratio_buy: {precent_buy}%')
