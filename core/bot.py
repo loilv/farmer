@@ -288,7 +288,7 @@ class CandlePatternScannerBot:
                 )
                 return
 
-        if abs(percentage_change) >= 2.5 and 90 < candle_duration > 150:
+        if abs(percentage_change) >= 2.5 and 120 < candle_duration > 150:
             if 99 < abs(precent_sell) <= 100 or 99 < abs(precent_buy) <= 100:
                 side = "BUY" if percentage_change > 0 else "SELL"
                 if not self.can_order(symbol, side):
