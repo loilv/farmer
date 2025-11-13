@@ -145,7 +145,7 @@ class CandlePatternScannerBot:
                 entry_price = float(data['ap'])
                 if data['R']:
                     if data['ot'] == 'TAKE_PROFIT':
-                        self.position.pop(symbol, None)
+                        self.position[symbol] = {}
                     return
 
                 if data['o'] == 'LIMIT':
