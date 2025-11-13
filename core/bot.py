@@ -273,7 +273,7 @@ class CandlePatternScannerBot:
                 if not self.can_order(symbol, side):
                     return
 
-                adjust = 0.9995 if side == "BUY" else 1.0005
+                adjust = 1.0005 if side == "BUY" else 0.9995
                 entry_price = close_price * adjust
 
                 qty = self.order_manager.calculate_position_size(symbol, entry_price)
@@ -294,7 +294,7 @@ class CandlePatternScannerBot:
                 if not self.can_order(symbol, side):
                     return
 
-                adjust = 1.0005 if side == "BUY" else 0.9995
+                adjust = 0.9995 if side == "BUY" else 1.0005
                 entry_price = close_price * adjust
 
                 qty = self.order_manager.calculate_position_size(symbol, entry_price)
