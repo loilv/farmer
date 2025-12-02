@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 
 from binance import Client
 from binance.enums import *
@@ -65,11 +66,17 @@ class BinanceCore:
     def get_top_volatile_liquid_symbols(self, limit=200, min_liquidity=30_000_000):
         # Lấy danh sách symbol Futures PERPETUAL đang hoạt động
         exchange_info = self.client.futures_exchange_info()
-        futures_symbols = {
-            s["symbol"]
-            for s in exchange_info["symbols"]
-            if s["contractType"] == "PERPETUAL" and s["status"] == "TRADING"
-        }
+
+        six_months_ago = datetime.utcnow() - timedelta(days=180)
+
+        # Lọc symbol PERPETUAL đang trading và đã niêm yết > 6 tháng
+        futures_symbols = {}
+        for s in exchange_info["symbols"]:
+            if s["contractType"] == "PERPETUAL" and s["status"] == "TRADING":
+                onboard_ts = s.get("onboardDate", 0)
+                onboard_date = datetime.utcfromtimestamp(onboard_ts / 1000)
+                if onboard_date <= six_months_ago:
+                    futures_symbols[s["symbol"]] = onboard_date
 
         tickers = self.client.futures_ticker()
         filtered = []
@@ -77,7 +84,7 @@ class BinanceCore:
         for t in tickers:
             symbol = t["symbol"]
 
-            # Chỉ lấy symbol đang hoạt động trên futures PERPETUAL
+            # Chỉ lấy symbol đang hoạt động và >6 tháng
             if symbol not in futures_symbols:
                 continue
 
@@ -225,22 +232,18 @@ class BinanceCore:
             print(f'Đặt SL Lỗi: {e}')
             return None
 
-    def create_stop_loss_be(self, symbol, new_stop, max_price, low_price):
+    def create_stop_loss_be(self, symbol):
         positions = self.get_position_by_symbol(symbol)
         position = positions[-1] if positions else {}
         qty = float(position.get('positionAmt', 0))
         price = float(position.get('breakEvenPrice', 0))
-        offset = (new_stop / 10) - 0.005
         try:
             if qty > 0:
-                side = 'SELL'
-                price = price * (1 + offset)
-                price = max(price, low_price)
-            else:  # Short
-                side = 'BUY'
-                price = price * (1 - offset)
-                price = max(price, max_price)
+                price = price * 1.001
+            else:
+                price = price * 0.990
 
+            side = 'SELL' if qty > 0 else 'BUY'
             price = self._format_price(symbol, price)
             order = self.client.futures_create_order(
                 symbol=symbol,
@@ -255,7 +258,7 @@ class BinanceCore:
             return order
         except Exception as e:
             print(f'Đặt SL BE Lỗi: price: {price} : {e}')
-            self.close_position(symbol)
+            # self.close_position(symbol)
             return None
 
             

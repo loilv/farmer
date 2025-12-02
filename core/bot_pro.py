@@ -1,3 +1,4 @@
+import os
 from itertools import islice
 
 from binance import Client, ThreadedWebsocketManager
@@ -8,7 +9,7 @@ import signal
 import time
 from .binance_core import BinanceCore
 from binance.enums import *
-from collections import deque
+from collections import deque, defaultdict
 
 
 class BotPro:
@@ -16,19 +17,22 @@ class BotPro:
         self.api_key = api_key
         self.secret_key = secret_key
         self.running = True
-        self.demo = demo
+        self.demo = False
         self.binance = BinanceCore(self.api_key, self.secret_key, self.demo)
         self.timeframe = "1m"
         self.usdt = 0.5
         self.leverage = 20
-        self.oc = 6
+        self.oc = 5
         self.kline = 6
-        self.tp = (self.usdt * 0.5)
-        self.sl = -1 * (self.usdt * 0.4)
-        self.tp_stop = (self.usdt * 0.2)
+        self.tp = (self.usdt * 0.6)
+        self.sl = -1 * (self.usdt * 2)
+        self.tp_stop = (self.usdt * 0.4)
         symbols = self.get_top_coins()
         self.all_symbols = {sym: deque(maxlen=self.kline) for sym in symbols}
         self.trailing_stop = dict()
+        self.worker_count = max(2, min(8, (os.cpu_count() or 4)))
+        self.queue_workers = []
+        self.symbol_locks = defaultdict(threading.Lock)
 
         # Queue chứa message WebSocket
         self.message_queue = queue.Queue(maxsize=50000)
@@ -79,6 +83,8 @@ class BotPro:
         # theo dõi khớp lệnh
         self.twm.start_futures_user_socket(callback=self._handle_user_stream)
         threading.Thread(target=self.twm.join, daemon=True).start()
+
+        self._start_queue_workers()
 
         # Main loop giữ bot chạy
         while self.running:
@@ -151,19 +157,12 @@ class BotPro:
             pnl = (close_price - entry) * abs(qty)
 
         print(f'{symbol} PNL: {round(pnl, 2)}')
-        offset = (abs(pnl) / 100) + 0.0005
-        stop = self.trailing_stop.get(symbol, self.tp_stop)
-        if pnl > 0 and pnl >= (stop + 0.05):
-            new_stop = pnl
-            self.trailing_stop[symbol] = new_stop
-
-            stop_loss_orders = self.binance.get_stop_loss_orders(symbol=symbol)
-            for sl in stop_loss_orders:
-                self.binance.cancel_order(symbol, sl)
-
-            stop_be = self.binance.create_stop_loss_be(symbol=symbol, new_stop=new_stop, max_price=max_price, low_price=low_price)
-            if not stop_be:
-                self.trailing_stop[symbol] = stop
+        offset = (abs(pnl) / 100)
+        # if pnl > 0 and pnl >= self.tp_stop:
+        #     if symbol not in self.trailing_stop:
+        #         stop_be = self.binance.create_stop_loss_be(symbol=symbol)
+        #         if stop_be:
+        #             self.trailing_stop[symbol] = stop_be
 
         if pnl > 0 and pnl >= self.tp:
             if symbol not in self.tp_orders:
@@ -174,7 +173,6 @@ class BotPro:
                     side = "SELL"
                     price = close_price * (1 + offset)
 
-                print(f'{symbol} price TP: {price}, {close_price}, {side}')
                 order = self.binance.create_order_take_profit(
                     symbol=symbol,
                     side=side,
@@ -250,12 +248,86 @@ class BotPro:
                 if order:
                     self.orders[symbol] = order
 
+    def _process_kline_message(self, data):
+        symbol = data.get("s")
+        if not symbol or symbol not in self.all_symbols:
+            return
+
+        symbol_lock = self.symbol_locks[symbol]
+        with symbol_lock:
+            if symbol in self.orders:
+                return
+
+            close_price = float(data.get("c"))
+            dq = self.all_symbols[symbol]
+            dq.append(close_price)
+
+            if len(dq) == self.kline:
+                result = self.handle_signal(symbol)
+                if not result:
+                    return
+
+                price, change, side = result
+
+                if change >= self.oc:
+                    print(symbol, change)
+                    quantity = (self.usdt * self.leverage) / abs(price)
+                    if not self.binance.can_make_order(symbol):
+                        return
+
+                    order = self.binance.create_order(
+                        symbol=symbol,
+                        side=side,
+                        entry_price=abs(price),
+                        quantity=quantity,
+                        order_type=FUTURE_ORDER_TYPE_LIMIT,
+                    )
+
+                    if order:
+                        self.orders[symbol] = order
+
+    # def _handle_multi_kline_order_queue(self):
+    #     while self.running or not self.message_queue.empty():
+    #         try:
+    #             data = self.message_queue.get(timeout=0.01)
+    #             print(data)
+    #         except queue.Empty:
+    #             continue
+    #
+    #         if data is None:
+    #             self.message_queue.task_done()
+    #             break
+    #
+    #         try:
+    #             self._process_kline_message(data)
+    #         finally:
+    #             self.message_queue.task_done()
+
+    def _start_queue_workers(self):
+        if self.queue_workers:
+            return
+
+        for idx in range(self.worker_count):
+            worker = threading.Thread(
+                target=self._handle_multi_kline_order_queue,
+                name=f"kline-worker-{idx}",
+                daemon=True,
+            )
+            self.queue_workers.append(worker)
+            worker.start()
+
     # ------------------------------------------
     def stop(self):
         print("🛑 Đang tắt bot...")
 
         self.running = False
         self.twm.stop()
+
+        for _ in self.queue_workers:
+            self.message_queue.put(None)
+
+        for worker in self.queue_workers:
+            worker.join(timeout=1)
 
         # Đợi queue hoàn tất
         try:
