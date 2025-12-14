@@ -4,4 +4,4 @@ requests>=2.28.0
 python-binance
 websockets
 aiohttp
-load_dotenv
+python-dotenv

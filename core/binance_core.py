@@ -1,18 +1,37 @@
 import logging
+import time
 from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
 
 from binance import Client
 from binance.enums import *
 
+logger = logging.getLogger(__name__)
+
 
 class BinanceCore:
-    def __init__(self, api_key, secret_key, demo=True):
+    def __init__(self, api_key: str, secret_key: str, demo: bool = True):
         self.api_key = api_key
         self.secret_key = secret_key
         self.client = Client(self.api_key, self.secret_key, demo=demo)
+        
+        # Cache exchange info để tránh gọi API nhiều lần
+        self._exchange_info_cache: Optional[Dict] = None
+        self._exchange_info_cache_time: float = 0
+        self._cache_ttl: int = 3600  # Cache 1 giờ
 
-    def get_all_positions(self):
-        return self.client.futures_position_information()
+    def _get_exchange_info(self) -> Dict:
+        """Lấy exchange info với cache"""
+        current_time = time.time()
+        if self._exchange_info_cache is None or (current_time - self._exchange_info_cache_time) > self._cache_ttl:
+            self._exchange_info_cache = self.client.futures_exchange_info()
+            self._exchange_info_cache_time = current_time
+        return self._exchange_info_cache
+
+    def get_all_positions(self) -> List[Dict]:
+        """Lấy tất cả positions đang mở (có qty != 0)"""
+        positions = self.client.futures_position_information()
+        return [p for p in positions if float(p.get('positionAmt', 0)) != 0]
 
     def get_position_by_symbol(self, symbol):
         return self.client.futures_position_information(symbol=symbol)
@@ -20,10 +39,6 @@ class BinanceCore:
     def get_limit_orders(self, symbol):
         orders = self.client.futures_get_open_orders(symbol=symbol)
         return [o for o in orders if o["type"] == "LIMIT" and (not o['reduceOnly'] or o['closePosition'])]
-
-    def get_stop_loss_orders(self, symbol):
-        orders = self.client.futures_get_open_orders(symbol=symbol)
-        return [o for o in orders if o["type"] == "STOP_MARKET"]
 
     def cancel_order(self, symbol, order):
         self.client.futures_cancel_order(
@@ -34,45 +49,47 @@ class BinanceCore:
     def clear_order(self, symbol):
         return self.client.futures_cancel_all_open_orders(symbol=symbol)
 
-    def can_make_order(self, symbol):
+    def can_make_order(self, symbol: str) -> bool:
+        """Kiểm tra có thể đặt lệnh mới không (không có position đang mở)"""
         self.clear_order(symbol)
-        position = self.get_position_by_symbol(symbol)
-        if not position:
+        positions = self.get_position_by_symbol(symbol)
+        if not positions:
             return True
-        return False
+        # Kiểm tra xem có position nào đang mở không
+        for pos in positions:
+            if float(pos.get('positionAmt', 0)) != 0:
+                return False
+        return True
 
-    def get_top_liquid_symbols(self):
-        # Lấy toàn bộ dữ liệu 24h của USDT-M Futures
-        tickers = self.client.futures_ticker()
+    def get_klines(self, symbol, interval, limit=3):
+        """Lấy dữ liệu nến đã đóng theo interval (1m, 1h, ...)
+        
+        Lấy limit+1 nến rồi bỏ nến cuối (đang chạy) để chỉ lấy nến đã đóng
+        """
+        try:
+            klines = self.client.futures_klines(
+                symbol=symbol,
+                interval=interval,
+                limit=limit + 1
+            )
+            # Bỏ nến cuối cùng (đang chạy, chưa đóng)
+            return klines[:-1] if len(klines) > limit else klines
+        except Exception as e:
+            logger.error(f"Lỗi lấy klines {symbol} {interval}: {e}")
+            return []
 
-        # Lọc symbol chỉ lấy USDT-M (kết thúc bằng USDT)
-        usdt_tickers = [
-            t for t in tickers
-            if t["symbol"].endswith("USDT")
-        ]
-
-        # Sort theo thanh khoản (quoteVolume)
-        sorted_tickers = sorted(
-            usdt_tickers,
-            key=lambda t: float(t["quoteVolume"]),
-            reverse=True
-        )
-
-        # Lấy top 50 symbol
-        top_50_symbols = [t["symbol"] for t in sorted_tickers[:100]]
-
-        return top_50_symbols
-
-    def get_top_volatile_liquid_symbols(self, limit=200, min_liquidity=30_000_000):
-        # Lấy danh sách symbol Futures PERPETUAL đang hoạt động
-        exchange_info = self.client.futures_exchange_info()
+    def get_top_volatile_liquid_symbols(self, limit: int = 100, min_liquidity: int = 30_000_000) -> List[str]:
+        """Lấy danh sách symbol có biến động và thanh khoản cao"""
+        exchange_info = self._get_exchange_info()
 
         six_months_ago = datetime.utcnow() - timedelta(days=180)
 
-        # Lọc symbol PERPETUAL đang trading và đã niêm yết > 6 tháng
+        # Lọc symbol PERPETUAL USDT đang trading và đã niêm yết > 6 tháng
         futures_symbols = {}
         for s in exchange_info["symbols"]:
-            if s["contractType"] == "PERPETUAL" and s["status"] == "TRADING":
+            if (s["contractType"] == "PERPETUAL" 
+                and s["status"] == "TRADING"
+                and s["symbol"].endswith("USDT")):
                 onboard_ts = s.get("onboardDate", 0)
                 onboard_date = datetime.utcfromtimestamp(onboard_ts / 1000)
                 if onboard_date <= six_months_ago:
@@ -104,7 +121,7 @@ class BinanceCore:
     def _format_quantity(self, symbol: str, quantity: float) -> float:
         """Format quantity theo step size của symbol"""
         try:
-            exchange_info = self.client.futures_exchange_info()
+            exchange_info = self._get_exchange_info()
             if not exchange_info:
                 return round(quantity, 3)
 
@@ -114,7 +131,6 @@ class BinanceCore:
                     for filter_info in filters:
                         if filter_info['filterType'] == 'LOT_SIZE':
                             step_size = float(filter_info['stepSize'])
-                            # Đảm bảo quantity không nhỏ hơn minQty
                             min_qty = float(filter_info.get('minQty', 0))
                             if quantity < min_qty:
                                 quantity = min_qty
@@ -124,13 +140,13 @@ class BinanceCore:
             return round(quantity, 3)
 
         except Exception as e:
-            logging.error(f"Lỗi format quantity {symbol}: {e}")
+            logger.error(f"Lỗi format quantity {symbol}: {e}")
             return round(quantity, 3)
 
     def _format_price(self, symbol: str, price: float) -> float:
         """Format price theo tick size của symbol"""
         try:
-            exchange_info = self.client.futures_exchange_info()
+            exchange_info = self._get_exchange_info()
             if not exchange_info:
                 return round(price, 2)
 
@@ -140,7 +156,6 @@ class BinanceCore:
                     for filter_info in filters:
                         if filter_info['filterType'] == 'PRICE_FILTER':
                             tick_size = float(filter_info['tickSize'])
-                            # Đảm bảo price không nhỏ hơn minPrice
                             min_price = float(filter_info.get('minPrice', 0))
                             if price < min_price:
                                 price = min_price
@@ -150,7 +165,7 @@ class BinanceCore:
             return round(price, 2)
 
         except Exception as e:
-            logging.error(f"Lỗi format price {symbol}: {e}")
+            logger.error(f"Lỗi format price {symbol}: {e}")
             return round(price, 2)
 
 
@@ -166,7 +181,7 @@ class BinanceCore:
             entry_price = self._format_price(symbol, entry_price)
             quantity = self._format_quantity(symbol, quantity)
 
-            print(f"🟢 Gửi lệnh {order_type} {side} {symbol} tại {entry_price}, số lượng: {quantity}")
+            logger.info(f"🟢 Gửi lệnh {order_type} {side} {symbol} tại {entry_price}, số lượng: {quantity}")
 
             order = self.client.futures_create_order(
                 symbol=symbol,
@@ -180,7 +195,7 @@ class BinanceCore:
             return order
 
         except Exception as e:
-            print(f"❌ Lỗi tạo lệnh entry {symbol}: {e}")
+            logger.error(f"❌ Lỗi tạo lệnh entry {symbol}: {e}")
             return None
 
     def create_order_take_profit(self, symbol, side, price, quantity):
@@ -188,9 +203,9 @@ class BinanceCore:
             # format
             price = self._format_price(symbol, price)
             quantity = self._format_quantity(symbol, quantity)
-            stop_price = self._format_price(symbol, price * 1.001)
+            stop_price = self._format_price(symbol, price)
 
-            print(price, stop_price)
+            logger.info(f"TP price: {price}, stop_price: {stop_price}")
             order = self.client.futures_create_order(
                 symbol=symbol,
                 side=side,
@@ -201,11 +216,11 @@ class BinanceCore:
                 quantity=quantity,
                 workingType="MARK_PRICE",
             )
-            print(f'Đặt TP Thành Công: {symbol} !!!!!!')
+            logger.info(f'Đặt TP Thành Công: {symbol}')
             return order
         except Exception as e:
             self.close_position(symbol)
-            print(f'Đặt TP Lỗi: {e}')
+            logger.error(f'Đặt TP Lỗi: {e}')
             return None
 
     def create_order_stop_loss(self, symbol, side, price, quantity):
@@ -225,49 +240,25 @@ class BinanceCore:
                 reduceOnly=True,
                 workingType="MARK_PRICE",
             )
-            print(f'Đặt SL Thành Công: {symbol} !!!!!!')
+            logger.info(f'Đặt SL Thành Công: {symbol}')
             return order
         except Exception as e:
             self.close_position(symbol)
-            print(f'Đặt SL Lỗi: {e}')
+            logger.error(f'Đặt SL Lỗi: {e}')
             return None
 
-    def create_stop_loss_be(self, symbol):
-        positions = self.get_position_by_symbol(symbol)
-        position = positions[-1] if positions else {}
-        qty = float(position.get('positionAmt', 0))
-        price = float(position.get('breakEvenPrice', 0))
-        try:
-            if qty > 0:
-                price = price * 1.001
-            else:
-                price = price * 0.990
-
-            side = 'SELL' if qty > 0 else 'BUY'
-            price = self._format_price(symbol, price)
-            order = self.client.futures_create_order(
-                symbol=symbol,
-                side=side,
-                type=FUTURE_ORDER_TYPE_STOP_MARKET,
-                stopPrice=price,
-                closePosition=True,
-                # quantity=quantity,
-                workingType="MARK_PRICE",
-            )
-            print(f'Đặt SL BE Thành Công: {symbol} !!!!!!')
-            return order
-        except Exception as e:
-            print(f'Đặt SL BE Lỗi: price: {price} : {e}')
-            # self.close_position(symbol)
-            return None
-
-            
     def close_position(self, symbol):
         """Đóng toàn bộ vị thế của symbol"""
         try:
+            # Hủy toàn bộ lệnh chờ (bao gồm trailing stop / TP / SL)
+            try:
+                self.client.futures_cancel_all_open_orders(symbol=symbol)
+            except Exception as e:
+                logger.warning(f"⚠️ Lỗi hủy lệnh chờ trước khi đóng vị thế {symbol}: {e}")
+
             position_info = self.client.futures_position_information(symbol=symbol)
             if not position_info:
-                print(f"⚠️ Không tìm thấy thông tin vị thế cho {symbol}")
+                logger.warning(f"⚠️ Không tìm thấy thông tin vị thế cho {symbol}")
                 return
 
             for pos in position_info:
@@ -286,15 +277,16 @@ class BinanceCore:
                         quantity=quantity,
                     )
 
-                    print(f"✅ Đã đóng vị thế {symbol} - Side: {side} - Quantity: {quantity}")
-                    self.client.futures_cancel_all_open_orders(symbol=symbol)
+                    logger.info(f"✅ Đã đóng vị thế {symbol} - Side: {side} - Quantity: {quantity}")
+
+                    # Hủy lại lần nữa để đảm bảo không còn lệnh chờ sau khi đã close
+                    try:
+                        self.client.futures_cancel_all_open_orders(symbol=symbol)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Lỗi hủy lệnh chờ sau khi đóng vị thế {symbol}: {e}")
                     return order
                 else:
-                    print(f"⚠️ Không có vị thế mở để đóng cho {symbol}")
+                    logger.warning(f"⚠️ Không có vị thế mở để đóng cho {symbol}")
 
         except Exception as e:
-            logging.error(f"❌ Lỗi khi đóng vị thế {symbol}: {e}")
-            pass
-
-
-
+            logger.error(f"❌ Lỗi khi đóng vị thế {symbol}: {e}")
