@@ -1,5 +1,4 @@
 import logging
-import queue
 import signal
 import threading
 import time
@@ -21,29 +20,46 @@ class BotPro:
         self.running = True
         self.demo = demo if isinstance(demo, bool) else str(demo).lower() in ('true', '1', 'yes')
         self.binance = BinanceCore(self.api_key, self.secret_key, self.demo)
-        self.timeframe_signal = "5m"
-        self.timeframe_check = "30m"
-        self.usdt = 0.5
-        self.leverage = 20
-        self.oc_signal = 1
-        self.oc_signal_realtime = 1.3
-        self.oc_check_min = 8
-        self.kline_signal = 3
-        self.kline_check = 3
-        self.tp = (self.usdt * 0.6)
-        self.sl = -1 * (self.usdt * 2)
-        self.tp_stop = (self.usdt * 0.4)
-        self.atr_period = 14
-        self.atr_mult = 1.5
+
+        self.trade = {
+            'usdt': 0.5,
+            'leverage': 20,
+        }
+
+        self.signal = {
+            'timeframe_signal': "1m",
+            'timeframe_check': "1h",
+            'oc_signal': 1,
+            'oc_signal_realtime': 1.5,
+            'oc_check_min': 6,
+            'kline_signal': 3,
+            'kline_check': 3,
+        }
+
+        self.risk = {
+            'tp': (self.trade['usdt'] * 1.5),
+            'sl': -1 * (self.trade['usdt'] * 1.5),
+        }
+
+        self.cache = {
+            'klines_check_ttl': 60,
+        }
+
+        self.ws = {
+            'reconnect_delay': 5,
+            'max_reconnect_attempts': 10,
+        }
+
+        self.dca = {
+            'profit_threshold': 0.2,
+            'profit_multiplier': 2,
+        }
+
         symbols = self.get_top_coins()
-        self.all_symbols_signal = {sym: deque(maxlen=self.kline_signal) for sym in symbols}
+        self.all_symbols_signal = {sym: deque(maxlen=self.signal['kline_signal']) for sym in symbols}
         self.klines_check_cache: Dict[str, Any] = {}  # Cache klines timeframe_check
         self.klines_check_cache_time: Dict[str, float] = {}  # Thời gian cache
-        self.klines_check_cache_ttl = 60  # Cache 60 giây
-        self.trailing_stop = dict()
         self.last_realtime_signal_candle: Dict[str, int] = {}
-        self.reconnect_delay = 5
-        self.max_reconnect_attempts = 10
 
         # Queue chứa message WebSocket
         self.twm = ThreadedWebsocketManager(
@@ -56,9 +72,17 @@ class BotPro:
         self.orders = dict()
         self.tp_orders = dict()
         self.sl_orders = dict()
-        self.tp_part_orders = dict()
-        self.hedge_orders = dict()
+        self.dca_done = dict()
+        self.dca_orders = dict()
         self.get_current_orders()
+
+    def _clear_symbol_state(self, symbol: str) -> None:
+        self.tp_orders.pop(symbol, None)
+        self.sl_orders.pop(symbol, None)
+        self.orders.pop(symbol, None)
+        self.dca_done.pop(symbol, None)
+        self.dca_orders.pop(symbol, None)
+        self.all_symbols_signal[symbol] = deque(maxlen=self.signal['kline_signal'])
 
     # ------------------------------------------
     # START BOT
@@ -86,14 +110,14 @@ class BotPro:
                 reconnect_count += 1
                 logger.error(f"WebSocket lỗi: {e}")
                 
-                if reconnect_count >= self.max_reconnect_attempts:
-                    logger.error(f"Đã thử kết nối lại {self.max_reconnect_attempts} lần. Dừng bot.")
+                if reconnect_count >= self.ws['max_reconnect_attempts']:
+                    logger.error(f"Đã thử kết nối lại {self.ws['max_reconnect_attempts']} lần. Dừng bot.")
                     self.running = False
                     break
                 
-                logger.info(f"Đang kết nối lại... (lần {reconnect_count}/{self.max_reconnect_attempts})")
+                logger.info(f"Đang kết nối lại... (lần {reconnect_count}/{self.ws['max_reconnect_attempts']})")
                 self._cleanup_websocket()
-                time.sleep(self.reconnect_delay)
+                time.sleep(self.ws['reconnect_delay'])
 
     def _start_websocket(self):
         """Khởi tạo và bắt đầu WebSocket"""
@@ -106,7 +130,7 @@ class BotPro:
         self.twm.start()
         
         streams = self.get_top_coins()
-        socket_streams = [f"{c.lower()}@kline_{self.timeframe_signal}" for c in streams]
+        socket_streams = [f"{c.lower()}@kline_{self.signal['timeframe_signal']}" for c in streams]
 
         # Hàm chia batch
         def chunk_list(lst, size):
@@ -136,6 +160,7 @@ class BotPro:
 
     def get_current_orders(self):
         orders = self.binance.get_all_positions()
+        self.orders = dict()
         for order in orders:
             self.orders[order["symbol"]] = order
         logger.info(f"Current orders: {self.orders}")
@@ -155,16 +180,66 @@ class BotPro:
                 logger.info(f"Entry {symbol} đã khớp hoàn toàn (OrderID: {order_id}) lệnh {data['o']}")
                 logger.info(f"MSG data: {data}")
 
-                if order_type in ('TAKE_PROFIT_MARKET', 'STOP_MARKET', 'MARKET', 'TAKE_PROFIT', 'STOP'):
-                    self.tp_orders.pop(symbol, None)
-                    self.hedge_orders.pop(symbol, None)
-                    self.sl_orders.pop(symbol, None)
-                    self.orders.pop(symbol, None)
+                had_position = symbol in self.orders
+
+                dca_order_id = self.dca_orders.get(symbol)
+                if dca_order_id is not None and order_id == int(dca_order_id):
+                    try:
+                        self.get_current_orders()
+                        position = self.orders.get(symbol)
+                        if not position:
+                            self.dca_orders.pop(symbol, None)
+                            return
+
+                        try:
+                            qty = float(position.get('positionAmt', 0))
+                            entry_be = float(position.get('breakEvenPrice', 0))
+                        except (ValueError, TypeError):
+                            self.dca_orders.pop(symbol, None)
+                            return
+
+                        if qty == 0 or entry_be == 0:
+                            self.dca_orders.pop(symbol, None)
+                            return
+
+                        stop_side = "SELL" if qty > 0 else "BUY"
+
+                        try:
+                            if symbol in self.sl_orders:
+                                self.binance.cancel_order(symbol, self.sl_orders[symbol])
+                                self.sl_orders.pop(symbol, None)
+                        except Exception as e:
+                            logger.warning(f"Lỗi hủy SL cũ trước khi đặt hòa vốn {symbol}: {e}")
+
+                        order = self.binance.create_order_stop_loss_be(
+                            symbol=symbol,
+                            side=stop_side,
+                            price=entry_be,
+                            quantity=abs(qty)
+                        )
+
+                        if order:
+                            self.sl_orders[symbol] = order
+                    finally:
+                        self.dca_orders.pop(symbol, None)
+
+                is_reduce_only = bool(data.get('R')) or bool(data.get('reduceOnly'))
+                is_close_position = bool(data.get('cp')) or bool(data.get('closePosition'))
+                should_clear = (
+                    order_type in ('TAKE_PROFIT_MARKET', 'STOP_MARKET', 'TAKE_PROFIT', 'STOP')
+                    or (order_type == 'MARKET' and (is_reduce_only or is_close_position))
+                )
+
+                if should_clear:
                     self.binance.clear_order(symbol)
-                    self.trailing_stop.pop(symbol, None)
-                    self.all_symbols_signal[symbol] = deque(maxlen=self.kline_signal)
+                    self._clear_symbol_state(symbol)
 
                 self.get_current_orders()
+
+                if had_position and symbol not in self.orders:
+                    self.binance.clear_order(symbol)
+                    self._clear_symbol_state(symbol)
+
 
     def _handle_multi_signal_kline(self, msg: Dict[str, Any]) -> None:
         """Xử lý dữ liệu kline từ WebSocket"""
@@ -201,7 +276,7 @@ class BotPro:
             last_candle = self.last_realtime_signal_candle.get(symbol)
             if last_candle != candle_start:
                 oc_signal_pct = ((close_price - open_price) / open_price) * 100
-                if abs(oc_signal_pct) >= self.oc_signal_realtime:
+                if abs(oc_signal_pct) >= self.signal['oc_signal_realtime']:
                     result = self._check_realtime_signal(symbol, close_price, oc_signal_pct)
                     if result:
                         self.last_realtime_signal_candle[symbol] = candle_start
@@ -220,41 +295,49 @@ class BotPro:
 
         
 
-    def _get_check_oc_pct(self, symbol: str) -> Optional[float]:
+    def _get_check_open_price(self, symbol: str) -> Optional[float]:
         now = time.time()
-        if symbol in self.klines_check_cache and (now - self.klines_check_cache_time.get(symbol, 0)) < self.klines_check_cache_ttl:
+        if symbol in self.klines_check_cache and (now - self.klines_check_cache_time.get(symbol, 0)) < self.cache['klines_check_ttl']:
             klines = self.klines_check_cache[symbol]
         else:
-            klines = self.binance.get_klines(symbol, self.timeframe_check, self.kline_check)
+            klines = self.binance.get_klines(symbol, self.signal['timeframe_check'], 3)
             if klines:
                 self.klines_check_cache[symbol] = klines
                 self.klines_check_cache_time[symbol] = now
 
-        if not klines or len(klines) < self.kline_check:
+        if not klines:
             return None
 
         try:
             open_check = float(klines[0][1])
-            close_check = float(klines[-1][4])
         except (ValueError, TypeError, IndexError):
             return None
 
         if open_check == 0:
             return None
-        return ((close_check - open_check) / open_check) * 100
+        return open_check
 
 
     def _check_realtime_signal(self, symbol: str, close_price: float, oc_signal_pct: float) -> Optional[Tuple[float, float, str]]:
-        oc_check_pct = self._get_check_oc_pct(symbol)
-        if oc_check_pct is None:
+        open_check_price = self._get_check_open_price(symbol)
+        if open_check_price is None:
             return None
 
-        logger.info(f"{symbol} | {self.timeframe_signal} OC(now): {oc_signal_pct:.2f}% | {self.timeframe_check} OC: {oc_check_pct:.2f}%")
+        check_change_pct = ((close_price - open_check_price) / open_check_price) * 100
+        logger.info(
+            f"{symbol} | {self.signal['timeframe_signal']} OC(now): {oc_signal_pct:.2f}% | {self.signal['timeframe_check']} OpenΔ: {check_change_pct:.2f}%"
+        )
 
-        if oc_signal_pct >= self.oc_signal_realtime and oc_check_pct < 0 and oc_check_pct < -self.oc_check_min:
+        if (
+            oc_signal_pct >= self.signal['oc_signal_realtime']
+            and check_change_pct <= -self.signal['oc_check_min']
+        ):
             return close_price, abs(oc_signal_pct), 'BUY'
 
-        if oc_signal_pct <= -self.oc_signal_realtime and oc_check_pct > self.oc_check_min:
+        if (
+            oc_signal_pct <= -self.signal['oc_signal_realtime']
+            and check_change_pct >= self.signal['oc_check_min']
+        ):
             return close_price, abs(oc_signal_pct), 'SELL'
 
         return None
@@ -263,7 +346,7 @@ class BotPro:
     def _place_entry_order(self, symbol: str, price: float, change: float, side: str) -> None:
         logger.info(f"Signal {side} {symbol} | Change: {change:.2f}%")
 
-        quantity = (self.usdt * self.leverage) / abs(price)
+        quantity = (self.trade['usdt'] * self.trade['leverage']) / abs(price)
         if not self.binance.can_make_order(symbol):
             return
 
@@ -277,37 +360,6 @@ class BotPro:
 
         if order:
             self.orders[symbol] = order
-
-
-    def _calculate_atr(self, symbol: str, interval: str, period: int) -> Optional[float]:
-        """Tính ATR (Average True Range) theo klines đã đóng."""
-        if period <= 0:
-            return None
-
-        klines = self.binance.get_klines(symbol, interval, period + 1)
-        if not klines or len(klines) < period + 1:
-            return None
-
-        trs = []
-        try:
-            prev_close = float(klines[0][4])
-            for k in klines[1:]:
-                high = float(k[2])
-                low = float(k[3])
-                close = float(k[4])
-                tr = max(
-                    high - low,
-                    abs(high - prev_close),
-                    abs(low - prev_close),
-                )
-                trs.append(tr)
-                prev_close = close
-        except (ValueError, TypeError, IndexError):
-            return None
-
-        if len(trs) < period:
-            return None
-        return sum(trs[-period:]) / period
 
 
     def handle_pnl(self, symbol: str, close_price: float, max_price: float, low_price: float) -> None:
@@ -334,69 +386,38 @@ class BotPro:
         pnl_color = "\033[92m" if pnl > 0 else ("\033[91m" if pnl < 0 else "")
         pnl_reset = "\033[0m" if pnl_color else ""
         logger.info(f'{pnl_color}{symbol} PNL: {round(pnl, 2)}{pnl_reset}')
-        offset = (abs(pnl) / 100)
+        offset = 0.001
 
-        if pnl > 0 and pnl >= self.tp_stop:
-            atr = self._calculate_atr(symbol, self.timeframe_signal, self.atr_period)
-            if atr and atr > 0:
+        if (
+            pnl > 0
+            and pnl >= self.dca['profit_threshold']
+            and not self.dca_done.get(symbol)
+        ):
+            try:
                 if qty < 0:
-                    stop_side = "BUY"
-                    new_stop_price = close_price + (atr * self.atr_mult)
+                    dca_side = "SELL"
                 else:
-                    stop_side = "SELL"
-                    new_stop_price = close_price - (atr * self.atr_mult)
+                    dca_side = "BUY"
 
-                prev = self.trailing_stop.get(symbol)
-                prev_stop_price = None
-                if isinstance(prev, dict):
-                    prev_stop_price = prev.get('stop_price')
+                dca_usdt = self.trade['usdt'] * self.dca['profit_multiplier']
+                dca_qty = (dca_usdt * self.trade['leverage']) / abs(close_price)
 
-                improved = False
-                if prev_stop_price is None:
-                    improved = True
-                else:
-                    if qty > 0:
-                        improved = new_stop_price > float(prev_stop_price)
-                    else:
-                        improved = new_stop_price < float(prev_stop_price)
+                order = self.binance.create_order(
+                    symbol=symbol,
+                    side=dca_side,
+                    entry_price=abs(close_price),
+                    quantity=dca_qty,
+                    order_type=FUTURE_ORDER_TYPE_MARKET,
+                )
 
-                if improved:
-                    try:
-                        if isinstance(prev, dict):
-                            prev_order_id = prev.get('order_id')
-                            if prev_order_id is not None:
-                                self.binance.cancel_order(symbol, {'orderId': prev_order_id})
-                            elif prev.get('order') and isinstance(prev.get('order'), dict) and prev['order'].get('orderId') is not None:
-                                self.binance.cancel_order(symbol, prev['order'])
-                    except Exception as e:
-                        logger.warning(f"Lỗi hủy trailing stop cũ {symbol}: {e}")
+                if order:
+                    self.dca_done[symbol] = True
+                    if isinstance(order, dict) and order.get('orderId') is not None:
+                        self.dca_orders[symbol] = int(order.get('orderId'))
+            except Exception as e:
+                logger.warning(f"Lỗi DCA {symbol}: {e}")
 
-                    try:
-                        if symbol in self.sl_orders:
-                            self.binance.cancel_order(symbol, self.sl_orders[symbol])
-                            self.sl_orders.pop(symbol, None)
-                    except Exception as e:
-                        logger.warning(f"Lỗi hủy SL cũ trước khi đặt trailing {symbol}: {e}")
-
-                    order = self.binance.create_order_stop_loss(
-                        symbol=symbol,
-                        side=stop_side,
-                        price=new_stop_price,
-                        quantity=abs(qty)
-                    )
-                    if order:
-                        order_id = None
-                        if isinstance(order, dict):
-                            order_id = order.get('orderId')
-                        self.trailing_stop[symbol] = {
-                            'order': order,
-                            'order_id': order_id,
-                            'stop_price': new_stop_price,
-                            'atr': atr,
-                            'interval': self.timeframe_signal,
-                        }
-
-        if pnl > 0 and pnl >= self.tp:
+        if pnl > 0 and pnl >= self.risk['tp']:
             if symbol not in self.tp_orders:
                 if qty < 0:
                     side = "BUY"
@@ -415,8 +436,7 @@ class BotPro:
                 if order:
                     self.tp_orders[symbol] = order
 
-        if pnl < 0 and pnl <= self.sl:
-            # Cắt lỗ 1 phần
+        if pnl < 0 and pnl <= self.risk['sl']:
             if symbol not in self.sl_orders:
                 if qty < 0:
                     side = "BUY"
@@ -434,40 +454,6 @@ class BotPro:
                 )
                 if order:
                     self.sl_orders[symbol] = order
-
-    def check_signal(self, symbol: str) -> Optional[Tuple[float, float, str]]:
-        """Check điều kiện vào lệnh dựa trên 3 nến 1m và 3 nến 1h
-        
-        BUY: 3 nến 1m tăng > 1% VÀ 3 nến 1h giảm < -8%
-        SELL: 3 nến 1m giảm < -1% VÀ 3 nến 1h tăng > 8%
-        
-        Returns:
-            Tuple[price, change_pct, side] hoặc None
-        """
-        klines_signal = self.all_symbols_signal.get(symbol)
-        if not klines_signal or len(klines_signal) < self.kline_signal:
-            return None
-
-        open_1m = klines_signal[0]['open']
-        close_1m = klines_signal[-1]['close']
-        oc_1m_pct = ((close_1m - open_1m) / open_1m) * 100
-
-        oc_1h_pct = self._get_check_oc_pct(symbol)
-        if oc_1h_pct is None:
-            return None
-
-        logger.info(f"{symbol} | 1m OC: {oc_1m_pct:.2f}% | {self.timeframe_check} OC: {oc_1h_pct:.2f}%")
-
-        if oc_1m_pct > self.oc_signal and oc_1h_pct < 0 and oc_1h_pct < -self.oc_check_min:
-            return close_1m, abs(oc_1m_pct), 'BUY'
-
-        if oc_1m_pct < -self.oc_signal and oc_1h_pct > self.oc_check_min:
-            return close_1m, abs(oc_1m_pct), 'SELL'
-
-        return None
-
-    def _handle_multi_kline_order_queue(self):
-        return
 
     # ------------------------------------------
     def stop(self):

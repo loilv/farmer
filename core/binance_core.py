@@ -41,10 +41,28 @@ class BinanceCore:
         return [o for o in orders if o["type"] == "LIMIT" and (not o['reduceOnly'] or o['closePosition'])]
 
     def cancel_order(self, symbol, order):
-        self.client.futures_cancel_order(
-            symbol=symbol,
-            orderId=order["orderId"]
-        )
+        try:
+            order_id = None
+            if isinstance(order, dict):
+                if order.get('orderId') is not None:
+                    order_id = order.get('orderId')
+                elif order.get('i') is not None:
+                    order_id = order.get('i')
+            else:
+                order_id = order
+
+            if order_id is None:
+                return
+
+            self.client.futures_cancel_order(
+                symbol=symbol,
+                orderId=order_id
+            )
+        except Exception as e:
+            msg = str(e)
+            if '-2011' in msg or 'Unknown order' in msg:
+                return
+            raise
 
     def clear_order(self, symbol):
         return self.client.futures_cancel_all_open_orders(symbol=symbol)
@@ -78,11 +96,11 @@ class BinanceCore:
             logger.error(f"Lỗi lấy klines {symbol} {interval}: {e}")
             return []
 
-    def get_top_volatile_liquid_symbols(self, limit: int = 100, min_liquidity: int = 30_000_000) -> List[str]:
+    def get_top_volatile_liquid_symbols(self, limit: int = 100, min_liquidity: int = 10_000_000) -> List[str]:
         """Lấy danh sách symbol có biến động và thanh khoản cao"""
         exchange_info = self._get_exchange_info()
 
-        six_months_ago = datetime.utcnow() - timedelta(days=180)
+        six_months_ago = datetime.utcnow() - timedelta(days=15)
 
         # Lọc symbol PERPETUAL USDT đang trading và đã niêm yết > 6 tháng
         futures_symbols = {}
@@ -108,8 +126,8 @@ class BinanceCore:
             change_pct = float(t["priceChangePercent"])
             quote_vol = float(t["quoteVolume"])  # thanh khoản 24h USDT
 
-            if quote_vol < min_liquidity:
-                continue
+            # if quote_vol < min_liquidity:
+            #     continue
 
             filtered.append((symbol, change_pct, quote_vol))
 
@@ -183,14 +201,22 @@ class BinanceCore:
 
             logger.info(f"🟢 Gửi lệnh {order_type} {side} {symbol} tại {entry_price}, số lượng: {quantity}")
 
-            order = self.client.futures_create_order(
-                symbol=symbol,
-                side=side,
-                type=FUTURE_ORDER_TYPE_LIMIT,
-                price=entry_price,
-                quantity=quantity,
-                timeInForce="GTC"
-            )
+            if order_type == FUTURE_ORDER_TYPE_MARKET:
+                order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=side,
+                    type=FUTURE_ORDER_TYPE_MARKET,
+                    quantity=quantity,
+                )
+            else:
+                order = self.client.futures_create_order(
+                    symbol=symbol,
+                    side=side,
+                    type=FUTURE_ORDER_TYPE_LIMIT,
+                    price=entry_price,
+                    quantity=quantity,
+                    timeInForce="GTC"
+                )
 
             return order
 
@@ -212,7 +238,6 @@ class BinanceCore:
                 type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
                 stopPrice=stop_price,
                 reduceOnly=True,
-                # price=price,
                 quantity=quantity,
                 workingType="MARK_PRICE",
             )
@@ -235,7 +260,6 @@ class BinanceCore:
                 side=side,
                 type=FUTURE_ORDER_TYPE_STOP_MARKET,
                 stopPrice=stop_price,
-                # price=price,
                 quantity=quantity,
                 reduceOnly=True,
                 workingType="MARK_PRICE",
@@ -245,6 +269,16 @@ class BinanceCore:
         except Exception as e:
             self.close_position(symbol)
             logger.error(f'Đặt SL Lỗi: {e}')
+            return None
+
+    def create_order_stop_loss_be(self, symbol, side, price, quantity):
+        try:
+            order = self.create_order_stop_loss(symbol=symbol, side=side, price=price, quantity=quantity)
+            if order:
+                logger.info(f'Đặt SL Hòa Vốn Thành Công: {symbol}')
+            return order
+        except Exception as e:
+            logger.error(f'Đặt SL Hòa Vốn Lỗi: {e}')
             return None
 
     def close_position(self, symbol):
