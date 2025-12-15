@@ -28,9 +28,9 @@ class BotPro:
 
         self.signal = {
             'timeframe_signal': "1m",
-            'timeframe_check': "1h",
+            'timeframe_check': "30m",
             'oc_signal': 1,
-            'oc_signal_realtime': 1.5,
+            'oc_signal_realtime': 1,
             'oc_check_min': 6,
             'kline_signal': 3,
             'kline_check': 3,
@@ -386,7 +386,7 @@ class BotPro:
         pnl_color = "\033[92m" if pnl > 0 else ("\033[91m" if pnl < 0 else "")
         pnl_reset = "\033[0m" if pnl_color else ""
         logger.info(f'{pnl_color}{symbol} PNL: {round(pnl, 2)}{pnl_reset}')
-        offset = 0.001
+        offset = 0.0005
 
         if (
             pnl > 0
