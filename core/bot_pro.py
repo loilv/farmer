@@ -39,6 +39,7 @@ class BotPro:
         self.risk = {
             'tp': (self.trade['usdt'] * 1.5),
             'sl': -1 * (self.trade['usdt'] * 1.5),
+            'max_active': 4
         }
 
         self.cache = {
@@ -344,8 +345,10 @@ class BotPro:
 
 
     def _place_entry_order(self, symbol: str, price: float, change: float, side: str) -> None:
-        logger.info(f"Signal {side} {symbol} | Change: {change:.2f}%")
+        if len(self.orders) >= self.risk['max_active']:
+            return
 
+        logger.info(f"Signal {side} {symbol} | Change: {change:.2f}%")
         quantity = (self.trade['usdt'] * self.trade['leverage']) / abs(price)
         if not self.binance.can_make_order(symbol):
             return
