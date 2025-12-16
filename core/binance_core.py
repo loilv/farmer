@@ -1,7 +1,7 @@
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any, Tuple, List
 
 from binance import Client
 from binance.enums import *
@@ -96,43 +96,26 @@ class BinanceCore:
             logger.error(f"Lỗi lấy klines {symbol} {interval}: {e}")
             return []
 
-    def get_top_volatile_liquid_symbols(self, limit: int = 100, min_liquidity: int = 10_000_000) -> List[str]:
-        """Lấy danh sách symbol có biến động và thanh khoản cao"""
+    def get_top_volatile_liquid_symbols(self, limit: int = 100) -> List[str]:
+        """Lấy danh sách symbol theo khối lượng giao dịch 24h"""
         exchange_info = self._get_exchange_info()
+        min_age = datetime.utcnow() - timedelta(days=15)
 
-        six_months_ago = datetime.utcnow() - timedelta(days=15)
-
-        # Lọc symbol PERPETUAL USDT đang trading và đã niêm yết > 6 tháng
-        futures_symbols = {}
+        futures_symbols = set()
         for s in exchange_info["symbols"]:
             if (s["contractType"] == "PERPETUAL" 
                 and s["status"] == "TRADING"
                 and s["symbol"].endswith("USDT")):
-                onboard_ts = s.get("onboardDate", 0)
-                onboard_date = datetime.utcfromtimestamp(onboard_ts / 1000)
-                if onboard_date <= six_months_ago:
-                    futures_symbols[s["symbol"]] = onboard_date
+                onboard_date = datetime.utcfromtimestamp(s.get("onboardDate", 0) / 1000)
+                if onboard_date <= min_age:
+                    futures_symbols.add(s["symbol"])
 
         tickers = self.client.futures_ticker()
-        filtered = []
-
-        for t in tickers:
-            symbol = t["symbol"]
-
-            # Chỉ lấy symbol đang hoạt động và >6 tháng
-            if symbol not in futures_symbols:
-                continue
-
-            change_pct = float(t["priceChangePercent"])
-            quote_vol = float(t["quoteVolume"])  # thanh khoản 24h USDT
-
-            # if quote_vol < min_liquidity:
-            #     continue
-
-            filtered.append((symbol, change_pct, quote_vol))
-
-        # Sắp xếp theo biến động mạnh (abs)
-        filtered.sort(key=lambda x: abs(x[1]), reverse=True)
+        filtered = [
+            (t["symbol"], float(t["quoteVolume"]))
+            for t in tickers if t["symbol"] in futures_symbols
+        ]
+        filtered.sort(key=lambda x: x[1], reverse=True)
 
         return [f[0] for f in filtered[:limit]]
 
@@ -269,16 +252,6 @@ class BinanceCore:
         except Exception as e:
             self.close_position(symbol)
             logger.error(f'Đặt SL Lỗi: {e}')
-            return None
-
-    def create_order_stop_loss_be(self, symbol, side, price, quantity):
-        try:
-            order = self.create_order_stop_loss(symbol=symbol, side=side, price=price, quantity=quantity)
-            if order:
-                logger.info(f'Đặt SL Hòa Vốn Thành Công: {symbol}')
-            return order
-        except Exception as e:
-            logger.error(f'Đặt SL Hòa Vốn Lỗi: {e}')
             return None
 
     def close_position(self, symbol):

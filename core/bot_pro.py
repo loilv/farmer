@@ -2,7 +2,6 @@ import logging
 import signal
 import threading
 import time
-from collections import deque
 from typing import Optional, Dict, Any, Tuple
 
 from binance import ThreadedWebsocketManager
@@ -28,17 +27,14 @@ class BotPro:
 
         self.signal = {
             'timeframe_signal': "1m",
-            'timeframe_check': "30m",
-            'oc_signal': 1,
-            'oc_signal_realtime': 1,
-            'oc_check_min': 6,
-            'kline_signal': 3,
-            'kline_check': 3,
+            'timeframe_check': "15m",
+            'oc_signal_realtime': 0.8,
+            'oc_check_min': 8,
         }
 
         self.risk = {
-            'tp': (self.trade['usdt'] * 1.5),
-            'sl': -1 * (self.trade['usdt'] * 1.5),
+            'tp': self.trade['usdt'] * 0.5,
+            'sl': -self.trade['usdt'] * 1.2,
             'max_active': 4
         }
 
@@ -51,18 +47,15 @@ class BotPro:
             'max_reconnect_attempts': 10,
         }
 
-        self.dca = {
-            'profit_threshold': 0.2,
-            'profit_multiplier': 2,
+        self.cooldown = {
+            'after_win': 3600,  # 1h cooldown sau khi win
         }
 
-        symbols = self.get_top_coins()
-        self.all_symbols_signal = {sym: deque(maxlen=self.signal['kline_signal']) for sym in symbols}
-        self.klines_check_cache: Dict[str, Any] = {}  # Cache klines timeframe_check
-        self.klines_check_cache_time: Dict[str, float] = {}  # Thời gian cache
+        self.symbols = self.get_top_coins()
+        self.klines_check_cache: Dict[str, Any] = {}
+        self.klines_check_cache_time: Dict[str, float] = {}
         self.last_realtime_signal_candle: Dict[str, int] = {}
 
-        # Queue chứa message WebSocket
         self.twm = ThreadedWebsocketManager(
             api_key=self.api_key,
             api_secret=self.secret_key,
@@ -73,23 +66,15 @@ class BotPro:
         self.orders = dict()
         self.tp_orders = dict()
         self.sl_orders = dict()
-        self.dca_done = dict()
-        self.dca_orders = dict()
+        self.last_win_time: Dict[str, float] = {}  # Thời gian win cuối của symbol
         self.get_current_orders()
 
     def _clear_symbol_state(self, symbol: str) -> None:
         self.tp_orders.pop(symbol, None)
         self.sl_orders.pop(symbol, None)
         self.orders.pop(symbol, None)
-        self.dca_done.pop(symbol, None)
-        self.dca_orders.pop(symbol, None)
-        self.all_symbols_signal[symbol] = deque(maxlen=self.signal['kline_signal'])
 
-    # ------------------------------------------
-    # START BOT
-    # ------------------------------------------
     def start(self):
-        # Bắt tín hiệu stop
         def signal_handler(sig, frame):
             logger.info("🛑 STOP signal nhận...")
             self.stop()
@@ -130,23 +115,15 @@ class BotPro:
         )
         self.twm.start()
         
-        streams = self.get_top_coins()
-        socket_streams = [f"{c.lower()}@kline_{self.signal['timeframe_signal']}" for c in streams]
+        socket_streams = [f"{s.lower()}@kline_{self.signal['timeframe_signal']}" for s in self.symbols]
 
-        # Hàm chia batch
-        def chunk_list(lst, size):
-            for i in range(0, len(lst), size):
-                yield lst[i:i + size]
-
-        # Tách mỗi batch 50
-        batches = list(chunk_list(socket_streams, 50))
+        batches = [socket_streams[i:i+50] for i in range(0, len(socket_streams), 50)]
         for batch in batches:
             self.twm.start_futures_multiplex_socket(
                 callback=self._handle_multi_signal_kline, streams=batch
             )
-            logger.info(f'Đang theo dõi {batch}')
-        
-        # Theo dõi khớp lệnh
+            logger.info(f'Đang theo dõi {len(batch)} symbols')
+
         self.twm.start_futures_user_socket(callback=self._handle_user_stream)
         threading.Thread(target=self.twm.join, daemon=True).start()
         logger.info("WebSocket đã kết nối thành công")
@@ -168,78 +145,41 @@ class BotPro:
         return self.orders
 
     def _handle_user_stream(self, msg):
-        if msg['e'] == 'ORDER_TRADE_UPDATE':
-            data = msg['o']
-            symbol = data['s']
-            order_id = int(data['i'])
-            status = data['X']
-            execution_type = data['x']
-            order_type = data['ot']
+        if msg.get('e') != 'ORDER_TRADE_UPDATE':
+            return
 
-            # Khi lệnh entry khớp
-            if status == 'FILLED' and execution_type == 'TRADE':
-                logger.info(f"Entry {symbol} đã khớp hoàn toàn (OrderID: {order_id}) lệnh {data['o']}")
-                logger.info(f"MSG data: {data}")
+        data = msg['o']
+        symbol = data['s']
+        status = data['X']
+        execution_type = data['x']
+        order_type = data['ot']
 
-                had_position = symbol in self.orders
+        if status == 'FILLED' and execution_type == 'TRADE':
+            logger.info(f"{symbol} khớp lệnh {order_type} | reduceOnly={data.get('R')} | closePosition={data.get('cp')}")
+            had_position = symbol in self.orders
 
-                dca_order_id = self.dca_orders.get(symbol)
-                if dca_order_id is not None and order_id == int(dca_order_id):
-                    try:
-                        self.get_current_orders()
-                        position = self.orders.get(symbol)
-                        if not position:
-                            self.dca_orders.pop(symbol, None)
-                            return
+            is_reduce_only = data.get('R')
+            is_close_position = data.get('cp')
+            is_tp = order_type in ('TAKE_PROFIT_MARKET', 'TAKE_PROFIT')
+            is_sl = order_type in ('STOP_MARKET', 'STOP')
+            should_clear = (
+                is_tp or is_sl
+                or (order_type == 'MARKET' and (is_reduce_only or is_close_position))
+            )
 
-                        try:
-                            qty = float(position.get('positionAmt', 0))
-                            entry_be = float(position.get('breakEvenPrice', 0))
-                        except (ValueError, TypeError):
-                            self.dca_orders.pop(symbol, None)
-                            return
+            if is_tp or should_clear:
+                self.last_win_time[symbol] = time.time()
+                logger.info(f"{symbol} WIN - cooldown 1h")
 
-                        if qty == 0 or entry_be == 0:
-                            self.dca_orders.pop(symbol, None)
-                            return
+            if should_clear:
+                self.binance.clear_order(symbol)
+                self._clear_symbol_state(symbol)
 
-                        stop_side = "SELL" if qty > 0 else "BUY"
+            self.get_current_orders()
 
-                        try:
-                            if symbol in self.sl_orders:
-                                self.binance.cancel_order(symbol, self.sl_orders[symbol])
-                                self.sl_orders.pop(symbol, None)
-                        except Exception as e:
-                            logger.warning(f"Lỗi hủy SL cũ trước khi đặt hòa vốn {symbol}: {e}")
-
-                        order = self.binance.create_order_stop_loss_be(
-                            symbol=symbol,
-                            side=stop_side,
-                            price=entry_be,
-                            quantity=abs(qty)
-                        )
-
-                        if order:
-                            self.sl_orders[symbol] = order
-                    finally:
-                        self.dca_orders.pop(symbol, None)
-
-                is_reduce_only = bool(data.get('R')) or bool(data.get('reduceOnly'))
-                is_close_position = bool(data.get('cp')) or bool(data.get('closePosition'))
-                should_clear = (
-                    order_type in ('TAKE_PROFIT_MARKET', 'STOP_MARKET', 'TAKE_PROFIT', 'STOP')
-                    or (order_type == 'MARKET' and (is_reduce_only or is_close_position))
-                )
-
-                if should_clear:
-                    self.binance.clear_order(symbol)
-                    self._clear_symbol_state(symbol)
-
-                self.get_current_orders()
-
-                if had_position and symbol not in self.orders:
-                    self.binance.clear_order(symbol)
-                    self._clear_symbol_state(symbol)
+            if had_position and symbol not in self.orders:
+                self.binance.clear_order(symbol)
+                self._clear_symbol_state(symbol)
 
 
     def _handle_multi_signal_kline(self, msg: Dict[str, Any]) -> None:
@@ -255,11 +195,10 @@ class BotPro:
             
         try:
             close_price = float(kline.get("c", 0))
-            max_price = float(kline.get("h", 0))
-            low_price = float(kline.get("l", 0))
         except (ValueError, TypeError):
             return
-        self.handle_pnl(symbol, close_price, max_price, low_price)
+
+        self.handle_pnl(symbol, close_price)
 
         try:
             open_price = float(kline.get("o", 0))
@@ -268,11 +207,19 @@ class BotPro:
             open_price = 0
             candle_start = 0
 
+        # Kiểm tra cooldown sau khi win
+        is_in_cooldown = False
+        if symbol in self.last_win_time:
+            elapsed = time.time() - self.last_win_time[symbol]
+            remaining = self.cooldown['after_win'] - elapsed
+            if remaining > 0:
+                is_in_cooldown = True
+
         if (
             open_price > 0
             and candle_start > 0
             and symbol not in self.orders
-            and symbol in self.all_symbols_signal
+            and not is_in_cooldown
         ):
             last_candle = self.last_realtime_signal_candle.get(symbol)
             if last_candle != candle_start:
@@ -283,25 +230,25 @@ class BotPro:
                         self.last_realtime_signal_candle[symbol] = candle_start
                         self._place_entry_order(symbol, result[0], result[1], result[2])
 
-        if kline.get("x"):
-            if symbol in self.orders:
-                try:
-                    orders = self.binance.get_limit_orders(symbol=symbol)
-                    for order in orders:
-                        self.binance.cancel_order(symbol, order)
-                        self.orders.pop(symbol, None)
-                    self.get_current_orders()
-                except Exception as e:
-                    logger.warning(f"Lỗi hủy lệnh {symbol}: {e}")
+        if kline.get("x") and symbol in self.orders:
+            try:
+                limit_orders = self.binance.get_limit_orders(symbol=symbol)
+                if limit_orders:
+                    # Có lệnh LIMIT chưa khớp → hủy tất cả orders và clear state
+                    logger.info(f"{symbol} có {len(limit_orders)} lệnh LIMIT chưa khớp, hủy tất cả")
+                    self.binance.clear_order(symbol)
+                    self._clear_symbol_state(symbol)
+                self.get_current_orders()
+            except Exception as e:
+                logger.warning(f"Lỗi hủy lệnh {symbol}: {e}")
 
-        
-
-    def _get_check_open_price(self, symbol: str) -> Optional[float]:
+    def _get_check_kline_data(self, symbol: str) -> Optional[Tuple[float, float]]:
+        """Trả về (open_price, body) của nến timeframe_check"""
         now = time.time()
         if symbol in self.klines_check_cache and (now - self.klines_check_cache_time.get(symbol, 0)) < self.cache['klines_check_ttl']:
             klines = self.klines_check_cache[symbol]
         else:
-            klines = self.binance.get_klines(symbol, self.signal['timeframe_check'], 3)
+            klines = self.binance.get_klines(symbol, self.signal['timeframe_check'], 2)
             if klines:
                 self.klines_check_cache[symbol] = klines
                 self.klines_check_cache_time[symbol] = now
@@ -311,19 +258,24 @@ class BotPro:
 
         try:
             open_check = float(klines[0][1])
+            close_check = float(klines[0][4])
         except (ValueError, TypeError, IndexError):
             return None
 
         if open_check == 0:
             return None
-        return open_check
+        
+        body = abs(close_check - open_check)
+        return open_check, body
 
 
     def _check_realtime_signal(self, symbol: str, close_price: float, oc_signal_pct: float) -> Optional[Tuple[float, float, str]]:
-        open_check_price = self._get_check_open_price(symbol)
-        if open_check_price is None:
+        """Trả về (price, change, side) nếu có signal"""
+        kline_data = self._get_check_kline_data(symbol)
+        if kline_data is None:
             return None
 
+        open_check_price, _ = kline_data
         check_change_pct = ((close_price - open_check_price) / open_check_price) * 100
         logger.info(
             f"{symbol} | {self.signal['timeframe_signal']} OC(now): {oc_signal_pct:.2f}% | {self.signal['timeframe_check']} OpenΔ: {check_change_pct:.2f}%"
@@ -365,9 +317,7 @@ class BotPro:
             self.orders[symbol] = order
 
 
-    def handle_pnl(self, symbol: str, close_price: float, max_price: float, low_price: float) -> None:
-        """Xử lý PNL và đặt TP/SL"""
-        
+    def handle_pnl(self, symbol: str, close_price: float) -> None:
         if symbol not in self.orders:
             return
 
@@ -391,36 +341,7 @@ class BotPro:
         logger.info(f'{pnl_color}{symbol} PNL: {round(pnl, 2)}{pnl_reset}')
         offset = 0.0005
 
-        if (
-            pnl > 0
-            and pnl >= self.dca['profit_threshold']
-            and not self.dca_done.get(symbol)
-        ):
-            try:
-                if qty < 0:
-                    dca_side = "SELL"
-                else:
-                    dca_side = "BUY"
-
-                dca_usdt = self.trade['usdt'] * self.dca['profit_multiplier']
-                dca_qty = (dca_usdt * self.trade['leverage']) / abs(close_price)
-
-                order = self.binance.create_order(
-                    symbol=symbol,
-                    side=dca_side,
-                    entry_price=abs(close_price),
-                    quantity=dca_qty,
-                    order_type=FUTURE_ORDER_TYPE_MARKET,
-                )
-
-                if order:
-                    self.dca_done[symbol] = True
-                    if isinstance(order, dict) and order.get('orderId') is not None:
-                        self.dca_orders[symbol] = int(order.get('orderId'))
-            except Exception as e:
-                logger.warning(f"Lỗi DCA {symbol}: {e}")
-
-        if pnl > 0 and pnl >= self.risk['tp']:
+        if pnl >= self.risk['tp']:
             if symbol not in self.tp_orders:
                 if qty < 0:
                     side = "BUY"
@@ -439,7 +360,7 @@ class BotPro:
                 if order:
                     self.tp_orders[symbol] = order
 
-        if pnl < 0 and pnl <= self.risk['sl']:
+        if pnl <= self.risk['sl']:
             if symbol not in self.sl_orders:
                 if qty < 0:
                     side = "BUY"
@@ -458,12 +379,10 @@ class BotPro:
                 if order:
                     self.sl_orders[symbol] = order
 
-    # ------------------------------------------
     def stop(self):
         logger.info("Đang tắt bot...")
         self.running = False
         
-        # Dừng WebSocket nhanh
         try:
             if self.twm:
                 self.twm.stop()
@@ -472,8 +391,5 @@ class BotPro:
         
         logger.info("Bot dừng hoàn toàn.")
 
-    # ------------------------------------------
-    # Chọn coin để listen
-    # ------------------------------------------
     def get_top_coins(self):
         return self.binance.get_top_volatile_liquid_symbols()
