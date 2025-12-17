@@ -28,7 +28,7 @@ class BotPro:
         self.signal = {
             'timeframe_signal': "1m",
             'timeframe_check': "15m",
-            'oc_signal_realtime': 0.8,
+            'oc_signal_realtime': 0.6,
             'oc_check_min': 8,
         }
 
