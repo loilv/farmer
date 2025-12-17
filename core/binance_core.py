@@ -18,7 +18,7 @@ class BinanceCore:
         # Cache exchange info để tránh gọi API nhiều lần
         self._exchange_info_cache: Optional[Dict] = None
         self._exchange_info_cache_time: float = 0
-        self._cache_ttl: int = 15 * 60  # Cache 15m
+        self._cache_ttl: int = 3600  # Cache 15m
 
     def _get_exchange_info(self) -> Dict:
         """Lấy exchange info với cache"""

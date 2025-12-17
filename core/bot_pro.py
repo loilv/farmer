@@ -28,13 +28,13 @@ class BotPro:
         self.signal = {
             'timeframe_signal': "1m",
             'timeframe_check': "15m",
-            'oc_signal_realtime': 0.6,
+            'oc_signal_realtime': 1,
             'oc_check_min': 8,
         }
 
         self.risk = {
             'tp': self.trade['usdt'] * 0.5,
-            'sl': -self.trade['usdt'] * 1.2,
+            'sl': -self.trade['usdt'] * 1,
             'max_active': 4
         }
 
@@ -49,6 +49,9 @@ class BotPro:
 
         self.cooldown = {
             'after_win': 3600,  # 1h cooldown sau khi win
+            'bypass_oc_check_min': 13,  # Bypass cooldown nếu oc_check >= ±13%
+            'bypass_oc_signal': 3,  # Bypass cooldown nếu oc_signal >= ±3%
+            'bypass_max_times': 1,  # Số lần bypass tối đa trong 1 cooldown
         }
 
         self.symbols = self.get_top_coins()
@@ -67,6 +70,7 @@ class BotPro:
         self.tp_orders = dict()
         self.sl_orders = dict()
         self.last_win_time: Dict[str, float] = {}  # Thời gian win cuối của symbol
+        self.bypass_count: Dict[str, int] = {}  # Số lần đã bypass cho symbol
         self.get_current_orders()
 
     def _clear_symbol_state(self, symbol: str) -> None:
@@ -169,6 +173,7 @@ class BotPro:
 
             if is_tp or should_clear:
                 self.last_win_time[symbol] = time.time()
+                self.bypass_count.pop(symbol, None)  # Reset bypass cho cooldown mới
                 logger.info(f"{symbol} WIN - cooldown 1h")
 
             if should_clear:
@@ -219,12 +224,30 @@ class BotPro:
             open_price > 0
             and candle_start > 0
             and symbol not in self.orders
-            and not is_in_cooldown
         ):
             last_candle = self.last_realtime_signal_candle.get(symbol)
             if last_candle != candle_start:
                 oc_signal_pct = ((close_price - open_price) / open_price) * 100
                 if abs(oc_signal_pct) >= self.signal['oc_signal_realtime']:
+                    # Nếu đang cooldown, kiểm tra tín hiệu mạnh để bypass
+                    if is_in_cooldown:
+                        kline_data = self._get_check_kline_data(symbol)
+                        if kline_data:
+                            open_check_price, _ = kline_data
+                            check_change_pct = ((close_price - open_check_price) / open_check_price) * 100
+                            # Bypass cooldown nếu tín hiệu mạnh
+                            if abs(check_change_pct) >= self.cooldown['bypass_oc_check_min'] and abs(oc_signal_pct) >= self.cooldown['bypass_oc_signal']:
+                                # Kiểm tra số lần bypass đã dùng
+                                used_count = self.bypass_count.get(symbol, 0)
+                                if used_count < self.cooldown['bypass_max_times']:
+                                    logger.info(f"{symbol} BYPASS COOLDOWN ({used_count + 1}/{self.cooldown['bypass_max_times']}) | OC: {oc_signal_pct:.2f}% | Check: {check_change_pct:.2f}%")
+                                    result = self._check_realtime_signal(symbol, close_price, oc_signal_pct)
+                                    if result:
+                                        self.bypass_count[symbol] = used_count + 1
+                                        self.last_realtime_signal_candle[symbol] = candle_start
+                                        self._place_entry_order(symbol, result[0], result[1], result[2])
+                        return
+                    
                     result = self._check_realtime_signal(symbol, close_price, oc_signal_pct)
                     if result:
                         self.last_realtime_signal_candle[symbol] = candle_start
