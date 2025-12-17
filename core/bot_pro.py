@@ -34,13 +34,18 @@ class BotPro:
 
         self.risk = {
             'tp': self.trade['usdt'] * 0.5,
-            'sl': -self.trade['usdt'] * 1,
+            'sl': -self.trade['usdt'] * 0.8,
             'max_active': 4
         }
 
         self.cache = {
             'klines_check_ttl': 60,
+            'symbols_ttl': 3600,  # 1h cập nhật list symbol
         }
+
+        self._symbols_cache = None
+        self._symbols_cache_time = 0
+        self._symbols_refresh_flag = False
 
         self.ws = {
             'reconnect_delay': 5,
@@ -95,6 +100,7 @@ class BotPro:
                 # Main loop giữ bot chạy
                 while self.running:
                     time.sleep(0.1)
+                    self._check_symbols_refresh()
                     
             except Exception as e:
                 reconnect_count += 1
@@ -414,5 +420,27 @@ class BotPro:
         
         logger.info("Bot dừng hoàn toàn.")
 
-    def get_top_coins(self):
-        return self.binance.get_top_volatile_liquid_symbols()
+    def get_top_coins(self, force_refresh: bool = False):
+        current_time = time.time()
+        if self._symbols_cache is None or force_refresh or (current_time - self._symbols_cache_time) >= self.cache['symbols_ttl']:
+            new_symbols = self.binance.get_top_volatile_liquid_symbols()
+            if self._symbols_cache is not None and set(new_symbols) != set(self._symbols_cache):
+                self._symbols_refresh_flag = True
+                logger.info(f"Phát hiện thay đổi symbols, đánh dấu refresh WebSocket")
+            self._symbols_cache = new_symbols
+            self._symbols_cache_time = current_time
+            logger.info(f"Cập nhật danh sách symbol: {len(self._symbols_cache)} coins")
+        return self._symbols_cache
+
+    def _check_symbols_refresh(self):
+        """Kiểm tra và refresh symbols nếu cần"""
+        current_time = time.time()
+        if (current_time - self._symbols_cache_time) >= self.cache['symbols_ttl']:
+            self.get_top_coins(force_refresh=True)
+            if self._symbols_refresh_flag:
+                self._symbols_refresh_flag = False
+                self.symbols = self._symbols_cache
+                logger.info("Đang restart WebSocket với symbols mới...")
+                self._cleanup_websocket()
+                time.sleep(1)
+                self._start_websocket()
