@@ -34,7 +34,7 @@ class BotPro:
 
         self.risk = {
             'tp': self.trade['usdt'] * 0.5,
-            'sl': -self.trade['usdt'] * 0.8,
+            'sl': -self.trade['usdt'] * 1.2,
             'max_active': 4
         }
 
@@ -54,7 +54,8 @@ class BotPro:
 
         self.cooldown = {
             'after_win': 3600,  # 1h cooldown sau khi win
-            'bypass_oc_check_min': 13,  # Bypass cooldown nếu oc_check >= ±13%
+            'bypass_timeframe': '30m',  # Khung nến check bypass
+            'bypass_oc_check_min': 13,  # Bypass cooldown nếu oc 1h >= ±13%
             'bypass_oc_signal': 3,  # Bypass cooldown nếu oc_signal >= ±3%
             'bypass_max_times': 1,  # Số lần bypass tối đa trong 1 cooldown
         }
@@ -62,6 +63,8 @@ class BotPro:
         self.symbols = self.get_top_coins()
         self.klines_check_cache: Dict[str, Any] = {}
         self.klines_check_cache_time: Dict[str, float] = {}
+        self.klines_bypass_cache: Dict[str, Any] = {}
+        self.klines_bypass_cache_time: Dict[str, float] = {}
         self.last_realtime_signal_candle: Dict[str, int] = {}
 
         self.twm = ThreadedWebsocketManager(
@@ -237,16 +240,16 @@ class BotPro:
                 if abs(oc_signal_pct) >= self.signal['oc_signal_realtime']:
                     # Nếu đang cooldown, kiểm tra tín hiệu mạnh để bypass
                     if is_in_cooldown:
-                        kline_data = self._get_check_kline_data(symbol)
-                        if kline_data:
-                            open_check_price, _ = kline_data
-                            check_change_pct = ((close_price - open_check_price) / open_check_price) * 100
-                            # Bypass cooldown nếu tín hiệu mạnh
-                            if abs(check_change_pct) >= self.cooldown['bypass_oc_check_min'] and abs(oc_signal_pct) >= self.cooldown['bypass_oc_signal']:
+                        bypass_kline = self._get_bypass_kline_data(symbol)
+                        if bypass_kline:
+                            open_bypass_price, _ = bypass_kline
+                            bypass_change_pct = ((close_price - open_bypass_price) / open_bypass_price) * 100
+                            # Bypass cooldown nếu tín hiệu mạnh (check ở khung 1h)
+                            if abs(bypass_change_pct) >= self.cooldown['bypass_oc_check_min'] and abs(oc_signal_pct) >= self.cooldown['bypass_oc_signal']:
                                 # Kiểm tra số lần bypass đã dùng
                                 used_count = self.bypass_count.get(symbol, 0)
                                 if used_count < self.cooldown['bypass_max_times']:
-                                    logger.info(f"{symbol} BYPASS COOLDOWN ({used_count + 1}/{self.cooldown['bypass_max_times']}) | OC: {oc_signal_pct:.2f}% | Check: {check_change_pct:.2f}%")
+                                    logger.info(f"{symbol} BYPASS COOLDOWN ({used_count + 1}/{self.cooldown['bypass_max_times']}) | OC: {oc_signal_pct:.2f}% | 1h: {bypass_change_pct:.2f}%")
                                     result = self._check_realtime_signal(symbol, close_price, oc_signal_pct)
                                     if result:
                                         self.bypass_count[symbol] = used_count + 1
@@ -297,6 +300,31 @@ class BotPro:
         body = abs(close_check - open_check)
         return open_check, body
 
+    def _get_bypass_kline_data(self, symbol: str) -> Optional[Tuple[float, float]]:
+        """Trả về (open_price, body) của nến 1h cho bypass cooldown"""
+        now = time.time()
+        if symbol in self.klines_bypass_cache and (now - self.klines_bypass_cache_time.get(symbol, 0)) < self.cache['klines_check_ttl']:
+            klines = self.klines_bypass_cache[symbol]
+        else:
+            klines = self.binance.get_klines(symbol, self.cooldown['bypass_timeframe'], 2)
+            if klines:
+                self.klines_bypass_cache[symbol] = klines
+                self.klines_bypass_cache_time[symbol] = now
+
+        if not klines:
+            return None
+
+        try:
+            open_bypass = float(klines[0][1])
+            close_bypass = float(klines[0][4])
+        except (ValueError, TypeError, IndexError):
+            return None
+
+        if open_bypass == 0:
+            return None
+        
+        body = abs(close_bypass - open_bypass)
+        return open_bypass, body
 
     def _check_realtime_signal(self, symbol: str, close_price: float, oc_signal_pct: float) -> Optional[Tuple[float, float, str]]:
         """Trả về (price, change, side) nếu có signal"""
