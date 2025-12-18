@@ -33,8 +33,8 @@ class BotPro:
         }
 
         self.risk = {
-            'tp': self.trade['usdt'] * 0.5,
-            'sl': -self.trade['usdt'] * 1.2,
+            'tp': self.trade['usdt'] * 0.6,
+            'sl': -self.trade['usdt'] * 1.5,
             'max_active': 4
         }
 
