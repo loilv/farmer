@@ -249,12 +249,19 @@ class BotPro:
                                 # Kiểm tra số lần bypass đã dùng
                                 used_count = self.bypass_count.get(symbol, 0)
                                 if used_count < self.cooldown['bypass_max_times']:
+                                    # Tăng bypass_count TRƯỚC để tránh race condition
+                                    self.bypass_count[symbol] = used_count + 1
                                     logger.info(f"{symbol} BYPASS COOLDOWN ({used_count + 1}/{self.cooldown['bypass_max_times']}) | OC: {oc_signal_pct:.2f}% | 1h: {bypass_change_pct:.2f}%")
                                     result = self._check_realtime_signal(symbol, close_price, oc_signal_pct)
                                     if result:
-                                        self.bypass_count[symbol] = used_count + 1
                                         self.last_realtime_signal_candle[symbol] = candle_start
                                         self._place_entry_order(symbol, result[0], result[1], result[2])
+                                        # Rollback nếu lệnh không được đặt thành công
+                                        if symbol not in self.orders:
+                                            self.bypass_count[symbol] = used_count
+                                    else:
+                                        # Rollback nếu signal không match
+                                        self.bypass_count[symbol] = used_count
                         return
                     
                     result = self._check_realtime_signal(symbol, close_price, oc_signal_pct)
