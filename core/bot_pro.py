@@ -238,6 +238,9 @@ class BotPro:
             if last_candle != candle_start:
                 oc_signal_pct = ((close_price - open_price) / open_price) * 100
                 if abs(oc_signal_pct) >= self.signal['oc_signal_realtime']:
+                    # Set ngay để chặn race condition từ cùng candle
+                    self.last_realtime_signal_candle[symbol] = candle_start
+                    
                     # Nếu đang cooldown, kiểm tra tín hiệu mạnh để bypass
                     if is_in_cooldown:
                         bypass_kline = self._get_bypass_kline_data(symbol)
@@ -249,24 +252,15 @@ class BotPro:
                                 # Kiểm tra số lần bypass đã dùng
                                 used_count = self.bypass_count.get(symbol, 0)
                                 if used_count < self.cooldown['bypass_max_times']:
-                                    # Tăng bypass_count TRƯỚC để tránh race condition
-                                    self.bypass_count[symbol] = used_count + 1
-                                    logger.info(f"{symbol} BYPASS COOLDOWN ({used_count + 1}/{self.cooldown['bypass_max_times']}) | OC: {oc_signal_pct:.2f}% | 1h: {bypass_change_pct:.2f}%")
-                                    result = self._check_realtime_signal(symbol, close_price, oc_signal_pct)
+                                    logger.info(f"{symbol} BYPASS COOLDOWN ({used_count + 1}/{self.cooldown['bypass_max_times']}) | OC: {oc_signal_pct:.2f}% | {self.cooldown['bypass_timeframe']}: {bypass_change_pct:.2f}%")
+                                    result = self._check_realtime_signal(symbol, close_price, oc_signal_pct, use_bypass_timeframe=True)
                                     if result:
-                                        self.last_realtime_signal_candle[symbol] = candle_start
                                         self._place_entry_order(symbol, result[0], result[1], result[2])
-                                        # Rollback nếu lệnh không được đặt thành công
-                                        if symbol not in self.orders:
-                                            self.bypass_count[symbol] = used_count
-                                    else:
-                                        # Rollback nếu signal không match
-                                        self.bypass_count[symbol] = used_count
+                                        self.bypass_count[symbol] = used_count + 1
                         return
                     
                     result = self._check_realtime_signal(symbol, close_price, oc_signal_pct)
                     if result:
-                        self.last_realtime_signal_candle[symbol] = candle_start
                         self._place_entry_order(symbol, result[0], result[1], result[2])
 
         if kline.get("x") and symbol in self.orders:
@@ -333,27 +327,36 @@ class BotPro:
         body = abs(close_bypass - open_bypass)
         return open_bypass, body
 
-    def _check_realtime_signal(self, symbol: str, close_price: float, oc_signal_pct: float) -> Optional[Tuple[float, float, str]]:
+    def _check_realtime_signal(self, symbol: str, close_price: float, oc_signal_pct: float, use_bypass_timeframe: bool = False) -> Optional[Tuple[float, float, str]]:
         """Trả về (price, change, side) nếu có signal"""
-        kline_data = self._get_check_kline_data(symbol)
+        if use_bypass_timeframe:
+            kline_data = self._get_bypass_kline_data(symbol)
+            timeframe_label = self.cooldown['bypass_timeframe']
+            oc_check_min = self.cooldown['bypass_oc_check_min']
+            oc_signal_min = self.cooldown['bypass_oc_signal']
+        else:
+            kline_data = self._get_check_kline_data(symbol)
+            timeframe_label = self.signal['timeframe_check']
+            oc_check_min = self.signal['oc_check_min']
+            oc_signal_min = self.signal['oc_signal_realtime']
         if kline_data is None:
             return None
 
         open_check_price, _ = kline_data
         check_change_pct = ((close_price - open_check_price) / open_check_price) * 100
         logger.info(
-            f"{symbol} | {self.signal['timeframe_signal']} OC(now): {oc_signal_pct:.2f}% | {self.signal['timeframe_check']} OpenΔ: {check_change_pct:.2f}%"
+            f"{symbol} | {self.signal['timeframe_signal']} OC(now): {oc_signal_pct:.2f}% | {timeframe_label} OpenΔ: {check_change_pct:.2f}%"
         )
 
         if (
-            oc_signal_pct >= self.signal['oc_signal_realtime']
-            and check_change_pct <= -self.signal['oc_check_min']
+            oc_signal_pct >= oc_signal_min
+            and check_change_pct <= -oc_check_min
         ):
             return close_price, abs(oc_signal_pct), 'BUY'
 
         if (
-            oc_signal_pct <= -self.signal['oc_signal_realtime']
-            and check_change_pct >= self.signal['oc_check_min']
+            oc_signal_pct <= -oc_signal_min
+            and check_change_pct >= oc_check_min
         ):
             return close_price, abs(oc_signal_pct), 'SELL'
 
