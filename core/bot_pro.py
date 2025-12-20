@@ -28,7 +28,7 @@ class BotPro:
         self.signal = {
             'timeframe_signal': "1m",
             'timeframe_check': "15m",
-            'oc_signal_realtime': 1,
+            'oc_signal_realtime': 1.5,
             'oc_check_min': 8,
         }
 
@@ -348,6 +348,21 @@ class BotPro:
             f"{symbol} | {self.signal['timeframe_signal']} OC(now): {oc_signal_pct:.2f}% | {timeframe_label} OpenΔ: {check_change_pct:.2f}%"
         )
 
+        # logic thuận - chỉ khi không dùng bypass
+        if not use_bypass_timeframe:
+            if (
+                oc_signal_pct > oc_signal_min
+                and check_change_pct >= oc_check_min
+            ):
+                return close_price, abs(oc_signal_pct), 'BUY'
+
+            if (
+                oc_signal_pct < -oc_signal_min
+                and check_change_pct <= -oc_check_min
+            ):
+                return close_price, abs(oc_signal_pct), 'SELL'
+
+        # logic ngược
         if (
             oc_signal_pct >= oc_signal_min
             and check_change_pct <= -oc_check_min
@@ -359,6 +374,7 @@ class BotPro:
             and check_change_pct >= oc_check_min
         ):
             return close_price, abs(oc_signal_pct), 'SELL'
+
 
         return None
 
