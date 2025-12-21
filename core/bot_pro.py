@@ -56,7 +56,7 @@ class BotPro:
             'after_win': 3600,  # 1h cooldown sau khi win
             'bypass_timeframe': '30m',  # Khung nến check bypass
             'bypass_oc_check_min': 13,  # Bypass cooldown nếu oc 1h >= ±13%
-            'bypass_oc_signal': 3,  # Bypass cooldown nếu oc_signal >= ±3%
+            'bypass_oc_signal': 1.5,  # Bypass cooldown nếu oc_signal >= ±3%
             'bypass_max_times': 1,  # Số lần bypass tối đa trong 1 cooldown
         }
 
@@ -347,20 +347,6 @@ class BotPro:
         logger.info(
             f"{symbol} | {self.signal['timeframe_signal']} OC(now): {oc_signal_pct:.2f}% | {timeframe_label} OpenΔ: {check_change_pct:.2f}%"
         )
-
-        # logic thuận - chỉ khi không dùng bypass
-        if not use_bypass_timeframe:
-            if (
-                oc_signal_pct > oc_signal_min
-                and check_change_pct >= oc_check_min
-            ):
-                return close_price, abs(oc_signal_pct), 'BUY'
-
-            if (
-                oc_signal_pct < -oc_signal_min
-                and check_change_pct <= -oc_check_min
-            ):
-                return close_price, abs(oc_signal_pct), 'SELL'
 
         # logic ngược
         if (
