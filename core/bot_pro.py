@@ -28,14 +28,14 @@ class BotPro:
         self.signal = {
             'timeframe_signal': "1m",
             'timeframe_check': "15m",
-            'oc_signal_realtime': 1.5,
+            'oc_signal_realtime': 0.6,
             'oc_check_min': 8,
         }
 
         self.risk = {
             'tp': self.trade['usdt'] * 0.6,
-            'sl': -self.trade['usdt'] * 1.5,
-            'max_active': 4
+            'sl': -self.trade['usdt'] * 1,
+            'max_active': 5
         }
 
         self.cache = {
@@ -53,18 +53,12 @@ class BotPro:
         }
 
         self.cooldown = {
-            'after_win': 3600,  # 1h cooldown sau khi win
-            'bypass_timeframe': '30m',  # Khung nến check bypass
-            'bypass_oc_check_min': 13,  # Bypass cooldown nếu oc 1h >= ±13%
-            'bypass_oc_signal': 1.5,  # Bypass cooldown nếu oc_signal >= ±3%
-            'bypass_max_times': 1,  # Số lần bypass tối đa trong 1 cooldown
+            'after_win': 3600,  # 1h cooldown sau khi đóng vị thế
         }
 
         self.symbols = self.get_top_coins()
         self.klines_check_cache: Dict[str, Any] = {}
         self.klines_check_cache_time: Dict[str, float] = {}
-        self.klines_bypass_cache: Dict[str, Any] = {}
-        self.klines_bypass_cache_time: Dict[str, float] = {}
         self.last_realtime_signal_candle: Dict[str, int] = {}
 
         self.twm = ThreadedWebsocketManager(
@@ -78,7 +72,6 @@ class BotPro:
         self.tp_orders = dict()
         self.sl_orders = dict()
         self.last_win_time: Dict[str, float] = {}  # Thời gian win cuối của symbol
-        self.bypass_count: Dict[str, int] = {}  # Số lần đã bypass cho symbol
         self.get_current_orders()
 
     def _clear_symbol_state(self, symbol: str) -> None:
@@ -180,14 +173,12 @@ class BotPro:
                 or (order_type == 'MARKET' and (is_reduce_only or is_close_position))
             )
 
-            if is_tp or should_clear:
-                self.last_win_time[symbol] = time.time()
-                self.bypass_count.pop(symbol, None)  # Reset bypass cho cooldown mới
-                logger.info(f"{symbol} WIN - cooldown 1h")
-
             if should_clear:
                 self.binance.clear_order(symbol)
                 self._clear_symbol_state(symbol)
+                # Đóng vị thế (win/lose) → cooldown 1h
+                self.last_win_time[symbol] = time.time()
+                logger.info(f"{symbol} đóng vị thế - cooldown 1h")
 
             self.get_current_orders()
 
@@ -221,13 +212,16 @@ class BotPro:
             open_price = 0
             candle_start = 0
 
-        # Kiểm tra cooldown sau khi win
+        # Kiểm tra cooldown sau khi đóng vị thế
         is_in_cooldown = False
         if symbol in self.last_win_time:
             elapsed = time.time() - self.last_win_time[symbol]
             remaining = self.cooldown['after_win'] - elapsed
             if remaining > 0:
                 is_in_cooldown = True
+            else:
+                # Hết cooldown → xóa state cũ
+                self.last_win_time.pop(symbol, None)
 
         if (
             open_price > 0
@@ -241,22 +235,8 @@ class BotPro:
                     # Set ngay để chặn race condition từ cùng candle
                     self.last_realtime_signal_candle[symbol] = candle_start
                     
-                    # Nếu đang cooldown, kiểm tra tín hiệu mạnh để bypass
+                    # Nếu đang cooldown, không vào lệnh
                     if is_in_cooldown:
-                        bypass_kline = self._get_bypass_kline_data(symbol)
-                        if bypass_kline:
-                            open_bypass_price, _ = bypass_kline
-                            bypass_change_pct = ((close_price - open_bypass_price) / open_bypass_price) * 100
-                            # Bypass cooldown nếu tín hiệu mạnh (check ở khung 1h)
-                            if abs(bypass_change_pct) >= self.cooldown['bypass_oc_check_min'] and abs(oc_signal_pct) >= self.cooldown['bypass_oc_signal']:
-                                # Kiểm tra số lần bypass đã dùng
-                                used_count = self.bypass_count.get(symbol, 0)
-                                if used_count < self.cooldown['bypass_max_times']:
-                                    logger.info(f"{symbol} BYPASS COOLDOWN ({used_count + 1}/{self.cooldown['bypass_max_times']}) | OC: {oc_signal_pct:.2f}% | {self.cooldown['bypass_timeframe']}: {bypass_change_pct:.2f}%")
-                                    result = self._check_realtime_signal(symbol, close_price, oc_signal_pct, use_bypass_timeframe=True)
-                                    if result:
-                                        self._place_entry_order(symbol, result[0], result[1], result[2])
-                                        self.bypass_count[symbol] = used_count + 1
                         return
                     
                     result = self._check_realtime_signal(symbol, close_price, oc_signal_pct)
@@ -301,63 +281,27 @@ class BotPro:
         body = abs(close_check - open_check)
         return open_check, body
 
-    def _get_bypass_kline_data(self, symbol: str) -> Optional[Tuple[float, float]]:
-        """Trả về (open_price, body) của nến 1h cho bypass cooldown"""
-        now = time.time()
-        if symbol in self.klines_bypass_cache and (now - self.klines_bypass_cache_time.get(symbol, 0)) < self.cache['klines_check_ttl']:
-            klines = self.klines_bypass_cache[symbol]
-        else:
-            klines = self.binance.get_klines(symbol, self.cooldown['bypass_timeframe'], 2)
-            if klines:
-                self.klines_bypass_cache[symbol] = klines
-                self.klines_bypass_cache_time[symbol] = now
-
-        if not klines:
-            return None
-
-        try:
-            open_bypass = float(klines[0][1])
-            close_bypass = float(klines[0][4])
-        except (ValueError, TypeError, IndexError):
-            return None
-
-        if open_bypass == 0:
-            return None
-        
-        body = abs(close_bypass - open_bypass)
-        return open_bypass, body
-
-    def _check_realtime_signal(self, symbol: str, close_price: float, oc_signal_pct: float, use_bypass_timeframe: bool = False) -> Optional[Tuple[float, float, str]]:
+    def _check_realtime_signal(self, symbol: str, close_price: float, oc_signal_pct: float) -> Optional[Tuple[float, float, str]]:
         """Trả về (price, change, side) nếu có signal"""
-        if use_bypass_timeframe:
-            kline_data = self._get_bypass_kline_data(symbol)
-            timeframe_label = self.cooldown['bypass_timeframe']
-            oc_check_min = self.cooldown['bypass_oc_check_min']
-            oc_signal_min = self.cooldown['bypass_oc_signal']
-        else:
-            kline_data = self._get_check_kline_data(symbol)
-            timeframe_label = self.signal['timeframe_check']
-            oc_check_min = self.signal['oc_check_min']
-            oc_signal_min = self.signal['oc_signal_realtime']
+        kline_data = self._get_check_kline_data(symbol)
         if kline_data is None:
             return None
 
         open_check_price, _ = kline_data
         check_change_pct = ((close_price - open_check_price) / open_check_price) * 100
         logger.info(
-            f"{symbol} | {self.signal['timeframe_signal']} OC(now): {oc_signal_pct:.2f}% | {timeframe_label} OpenΔ: {check_change_pct:.2f}%"
+            f"{symbol} | {self.signal['timeframe_signal']} OC(now): {oc_signal_pct:.2f}% | {self.signal['timeframe_check']} OpenΔ: {check_change_pct:.2f}%"
         )
 
-        # logic ngược
         if (
-            oc_signal_pct >= oc_signal_min
-            and check_change_pct <= -oc_check_min
+            oc_signal_pct >= self.signal['oc_signal_realtime']
+            and check_change_pct <= -self.signal['oc_check_min']
         ):
             return close_price, abs(oc_signal_pct), 'BUY'
 
         if (
-            oc_signal_pct <= -oc_signal_min
-            and check_change_pct >= oc_check_min
+            oc_signal_pct <= -self.signal['oc_signal_realtime']
+            and check_change_pct >= self.signal['oc_check_min']
         ):
             return close_price, abs(oc_signal_pct), 'SELL'
 
