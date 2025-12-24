@@ -190,6 +190,8 @@ class BotPro:
                 # Đóng vị thế (win/lose) → cooldown 1h
                 self.last_win_time[symbol] = time.time()
                 logger.info(f"{symbol} đóng vị thế - cooldown 1h")
+                self._check_daily_profit_target()
+
 
             self.get_current_orders()
 
@@ -200,10 +202,6 @@ class BotPro:
 
     def _handle_multi_signal_kline(self, msg: Dict[str, Any]) -> None:
         """Xử lý dữ liệu kline từ WebSocket"""
-        # Skip hoàn toàn nếu đang pause
-        if self._is_trading_paused():
-            return
-
         data = msg.get("data", {})
         if not data:
             return
@@ -238,8 +236,12 @@ class BotPro:
                 # Hết cooldown → xóa state cũ
                 self.last_win_time.pop(symbol, None)
 
+        # Nếu đang pause → không tìm tín hiệu mới, nhưng vẫn xử lý vị thế đang mở
+        is_paused = self._is_trading_paused()
+
         if (
-            open_price > 0
+            not is_paused
+            and open_price > 0
             and candle_start > 0
             and symbol not in self.orders
         ):
