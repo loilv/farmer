@@ -297,3 +297,26 @@ class BinanceCore:
 
         except Exception as e:
             logger.error(f"❌ Lỗi khi đóng vị thế {symbol}: {e}")
+
+    def get_pnl_today(self) -> float:
+        """Lấy tổng PnL realized từ 00:00 UTC hôm nay"""
+        try:
+            # Lấy timestamp 07:00 UTC hôm nay
+            now = datetime.utcnow()
+            start_of_day = datetime(now.year, now.month, now.day, 7, 0, 0)
+            start_time = int(start_of_day.timestamp() * 1000)
+            end_time = int(time.time() * 1000)
+            
+            income_list = self.client.futures_income_history(
+                incomeType="REALIZED_PNL",
+                startTime=start_time,
+                endTime=end_time,
+                limit=1000
+            )
+
+            total_pnl = sum(float(item.get('income', 0)) for item in income_list)
+            return total_pnl
+            
+        except Exception as e:
+            logger.error(f"Lỗi lấy PnL hôm nay: {e}")
+            return 0.0

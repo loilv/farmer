@@ -56,7 +56,17 @@ class BotPro:
             'after_win': 3600,  # 1h cooldown sau khi đóng vị thế
         }
 
+        # Cấu hình dừng trade khi đạt profit target 24h
+        self.daily_profit = {
+            'target': 2.5,           # Dừng trade khi lãi >= 2.5 USDT trong 24h
+            'pause_duration': 12 * 3600,  # Dừng 12h (tính bằng giây)
+        }
+        self._profit_pause_until: float = 0  # Timestamp khi hết pause
+        self._last_pnl_check_time: float = 0  # Lần cuối kiểm tra PnL
+        self._pnl_check_interval: int = 300  # Kiểm tra PnL mỗi 5 phút
+
         self.symbols = self.get_top_coins()
+        self._check_daily_profit_target()  # Kiểm tra ngay khi khởi động
         self.klines_check_cache: Dict[str, Any] = {}
         self.klines_check_cache_time: Dict[str, float] = {}
         self.last_realtime_signal_candle: Dict[str, int] = {}
@@ -97,6 +107,7 @@ class BotPro:
                 while self.running:
                     time.sleep(0.1)
                     self._check_symbols_refresh()
+                    self._periodic_pnl_check()
                     
             except Exception as e:
                 reconnect_count += 1
@@ -189,6 +200,10 @@ class BotPro:
 
     def _handle_multi_signal_kline(self, msg: Dict[str, Any]) -> None:
         """Xử lý dữ liệu kline từ WebSocket"""
+        # Skip hoàn toàn nếu đang pause
+        if self._is_trading_paused():
+            return
+
         data = msg.get("data", {})
         if not data:
             return
@@ -313,6 +328,10 @@ class BotPro:
         if len(self.orders) >= self.risk['max_active']:
             return
 
+        # Kiểm tra nếu đang pause do đạt profit target
+        if self._is_trading_paused():
+            return
+
         logger.info(f"Signal {side} {symbol} | Change: {change:.2f}%")
         quantity = (self.trade['usdt'] * self.trade['leverage']) / abs(price)
         if not self.binance.can_make_order(symbol):
@@ -403,6 +422,43 @@ class BotPro:
             logger.warning(f"Lỗi khi dừng WebSocket: {e}")
         
         logger.info("Bot dừng hoàn toàn.")
+
+    def _check_daily_profit_target(self) -> bool:
+        """Kiểm tra PnL 24h và kích hoạt pause nếu đạt target.
+        
+        Returns:
+            True nếu đang trong trạng thái pause (không được trade)
+        """
+        now = time.time()
+        
+        # Nếu đang pause, kiểm tra xem đã hết thời gian chưa
+        if self._profit_pause_until > now:
+            return True
+        
+        # Lấy PnL hôm nay từ API (từ 00:00 UTC)
+        pnl_today = self.binance.get_pnl_today()
+        
+        if pnl_today >= self.daily_profit['target']:
+            self._profit_pause_until = now + self.daily_profit['pause_duration']
+            pause_hours = self.daily_profit['pause_duration'] / 3600
+            logger.info(
+                f"🎯 Đạt profit target! PnL hôm nay: {pnl_today:.2f} USDT >= {self.daily_profit['target']} USDT. "
+                f"Dừng trade {pause_hours}h"
+            )
+            return True
+        
+        return False
+
+    def _is_trading_paused(self) -> bool:
+        """Kiểm tra nhanh xem có đang pause không (không gọi API)"""
+        return time.time() < self._profit_pause_until
+
+    def _periodic_pnl_check(self) -> None:
+        """Định kỳ kiểm tra PnL 24h (mỗi 5 phút)"""
+        now = time.time()
+        if (now - self._last_pnl_check_time) >= self._pnl_check_interval:
+            self._last_pnl_check_time = now
+            self._check_daily_profit_target()
 
     def get_top_coins(self, force_refresh: bool = False):
         current_time = time.time()
